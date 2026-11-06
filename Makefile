@@ -34,7 +34,7 @@ GENERATOR_SCRIPT ?=
 
 .PHONY: help check-user test check deps install install-files install-config \
 	setup-key show-key install-systemd bootstrap configure configure-generator \
-	verify-config verify-auth clone-repo check-schedule enable-timers \
+	verify-config verify-auth clone-repo check-thetadata check-schedule enable-timers \
 	disable-timers finish update status logs next-steps
 
 help: ## Show the available setup and operations targets.
@@ -44,10 +44,10 @@ help: ## Show the available setup and operations targets.
 	  'Recommended first installation:' \
 	  '  make bootstrap' \
 	  '  # Add the displayed deploy key to GitHub with write access.' \
-	  '  make configure-generator GENERATOR_DIR=/absolute/generator/dir GENERATOR_SCRIPT=/absolute/generator.py' \
 	  '  make finish' \
 	  '' \
-	  'If the generator has a different CLI, run: make configure' \
+	  'The included generator uses ThetaData v3 at http://127.0.0.1:25503/v3.' \
+	  'To substitute a different generator, run: make configure-generator ...' \
 	  '' \
 	  'Targets:'
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_.-]+:.*## / {printf "  %-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -60,7 +60,7 @@ check-user:
 	done
 
 test: ## Run the complete unit and temporary-Git integration test suite.
-	$(PYTHON) -m py_compile market_calendar.py spy_report_publisher.py schedule_runner.py
+	$(PYTHON) -m py_compile market_calendar.py spy_report_publisher.py schedule_runner.py thetadata_report_generator.py
 	$(PYTHON) -m unittest discover -s tests -v
 
 check: test ## Run all checks that do not change the Pi or contact GitHub.
@@ -73,7 +73,7 @@ deps: ## Install Raspberry Pi OS package dependencies.
 
 install-files: check-user test ## Install or update the Python component under PREFIX.
 	$(SUDO) install -d -m 0755 '$(PREFIX)'
-	$(SUDO) install -m 0755 market_calendar.py spy_report_publisher.py schedule_runner.py '$(PREFIX)/'
+	$(SUDO) install -m 0755 market_calendar.py spy_report_publisher.py schedule_runner.py thetadata_report_generator.py '$(PREFIX)/'
 
 install-config: check-user ## Create state/log directories and install config only if absent.
 	$(SUDO) install -d -m 0750 -o '$(RUN_USER)' -g '$(RUN_GROUP)' '$(CONFIG_DIR)'
@@ -86,6 +86,8 @@ install-config: check-user ## Create state/log directories and install config on
 	    -e 's|^calendar_overrides = .*|calendar_overrides = $(CONFIG_DIR)/calendar-overrides.json|' \
 	    -e 's|^log_file = .*|log_file = $(LOG_DIR)/publisher.log|' \
 	    -e 's|^input_dir = .*|input_dir = $(STATE_DIR)/incoming|' \
+	    -e 's|/opt/spy-report-publisher|$(PREFIX)|g' \
+	    -e 's|/usr/bin/python3|$(PYTHON)|g' \
 	    config/spy-report-publisher.ini.example >"$$tmp"; \
 	  $(SUDO) install -m 0640 -o '$(RUN_USER)' -g '$(RUN_GROUP)' "$$tmp" '$(CONFIG_FILE)'; \
 	  echo 'Installed new $(CONFIG_FILE)'; \
@@ -207,6 +209,9 @@ clone-repo: check-user ## Clone or validate the dedicated publication checkout.
 	$(SUDO) -u '$(RUN_USER)' git -C '$(REPO_DIR)' config user.email 'spy-report-publisher@localhost'
 	@$(SUDO) -u '$(RUN_USER)' git -C '$(REPO_DIR)' status --short --branch
 
+check-thetadata: check-user verify-config ## Verify the local ThetaData v3 terminal and required data access.
+	$(SUDO) -u '$(RUN_USER)' $(PYTHON) '$(PREFIX)/thetadata_report_generator.py' --health-check
+
 check-schedule: check-user verify-config ## Evaluate both schedule gates without generating or publishing.
 	$(SUDO) -u '$(RUN_USER)' $(PYTHON) '$(PREFIX)/schedule_runner.py' --config '$(CONFIG_FILE)' --session premarket --check-schedule
 	$(SUDO) -u '$(RUN_USER)' $(PYTHON) '$(PREFIX)/schedule_runner.py' --config '$(CONFIG_FILE)' --session postmarket --check-schedule
@@ -219,7 +224,7 @@ enable-timers: install-systemd verify-config clone-repo ## Verify and enable all
 disable-timers: ## Disable the publisher timers without removing files or reports.
 	$(SUDO) systemctl disable --now $(TIMERS)
 
-finish: verify-auth clone-repo verify-config enable-timers ## Complete setup after the deploy key and generator are configured.
+finish: verify-auth clone-repo verify-config check-thetadata enable-timers ## Verify ThetaData and complete setup.
 	@echo 'SPY report publisher setup is complete.'
 
 update: install-files install-systemd ## Update code and unit files while preserving config and credentials.
@@ -237,9 +242,8 @@ next-steps:
 	  '' \
 	  'Bootstrap complete; timers are still disabled.' \
 	  '1. Add the deploy key above in GitHub repository Settings > Deploy keys with write access.' \
-	  '2. Configure the generator:' \
-	  '   make configure-generator GENERATOR_DIR=/absolute/dir GENERATOR_SCRIPT=/absolute/script.py' \
-	  '   (or run make configure for a different generator CLI)' \
-	  '3. Complete setup: make finish' \
+	  '2. Ensure Theta Terminal v3 is running locally on port 25503.' \
+	  '3. Complete setup and verify ThetaData: make finish' \
+	  'The included SPY/SPX/VIX generator is already configured.' \
 	  ''
 

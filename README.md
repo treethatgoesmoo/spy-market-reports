@@ -1,11 +1,11 @@
-# SPY report publisher for Raspberry Pi
+# SPY ThetaData report generator and publisher for Raspberry Pi
 
-This repository contains a standard-library-only Python publishing component for an
-existing SPY analysis generator. It validates a generated JSON report, writes the
-canonical copy to `reports/YYYYMMDD.json`, updates `latest.json`, commits the two
-paths on `main`, and pushes to `treethatgoesmoo/spy-market-reports`.
+This repository contains a standard-library-only Python pipeline that calls a locally
+running ThetaData v3 terminal, gathers SPY plus SPX/VIX data, creates a transparent
+rule-based market report, validates it, writes `reports/YYYYMMDD.json`, updates
+`latest.json`, commits the two paths on `main`, and pushes them to this repository.
 
-Package version: **1.0.0**.
+Package version: **1.1.0**.
 
 The publisher is intentionally fail-closed. Validation finishes before it accesses
 Git. A bad report cannot replace `latest.json`.
@@ -37,9 +37,30 @@ Because the requested archive path has no session suffix, the postmarket publica
 replaces that day's premarket file. The premarket version remains available in Git
 history; `latest.json` contains the newest session.
 
+## Included ThetaData analysis generator
+
+`thetadata_report_generator.py` is the default generator; no separate analysis script
+is required. It connects to Theta Terminal v3 at
+`http://127.0.0.1:25503/v3` and requests:
+
+- 5-minute SPY bars from `/stock/history/ohlc`;
+- SPX and VIX prices from `/index/history/price`;
+- up to 30 calendar days of regular-session history.
+
+It calculates moving averages, EMA trend, RSI, ATR, realized volatility, price and
+volume momentum, SPX confirmation, and the VIX trend/regime. Every contribution to
+the final bullish/neutral/bearish score is stored in `analysis.signals`; the result is
+an explainable rule-based research summary, not a trained model or investment advice.
+
+Theta Terminal must already be running on the same Pi, and the ThetaData account must
+have access to stock OHLC and index-price history. The generator refuses non-loopback
+ThetaData URLs by default, rejects malformed/stale responses, and will not produce a
+partial report when SPY, SPX, or VIX data is missing. Override the index set with the
+`THETADATA_INDICES` environment variable or `--indices` when needed.
+
 ## Required report contract
 
-The existing generator must write one JSON object with at least these fields:
+The included generator writes one JSON object with at least these fields:
 
 ```json
 {
@@ -62,7 +83,7 @@ TRADING_DATE=2026-11-06
 REPORT_OUTPUT=/var/lib/spy-report-publisher/incoming/...
 ```
 
-If the current generator does not write the metadata, add it at report creation time,
+If you substitute a custom generator, it must add this metadata at report creation time,
 using the session and trading date supplied by the runner rather than deriving a date
 from UTC:
 
@@ -86,6 +107,7 @@ performed.
 ## Files
 
 - `spy_report_publisher.py` — validation and transactional Git publication
+- `thetadata_report_generator.py` — local ThetaData collection and SPY analysis
 - `market_calendar.py` — dependency-free US equities session calendar
 - `schedule_runner.py` — holiday/early-close gate and generator integration
 - `config/` — publisher configuration and emergency calendar overrides
@@ -116,26 +138,24 @@ configuration if it does not already exist, and installs—but does not enable�
 systemd units. It prints the public deploy key and the remaining steps.
 
 Add that public key under the repository's **Settings → Deploy keys**, enable
-**Allow write access**, then configure the existing generator. For a generator that
-implements the documented `--session`, `--trading-date`, and `--output` interface:
+**Allow write access**, ensure Theta Terminal v3 is running locally, and finish:
 
 ```bash
-make configure-generator \
-  GENERATOR_DIR=/absolute/path/to/your/generator \
-  GENERATOR_SCRIPT=/absolute/path/to/your/generator/generate_report.py
 make finish
 ```
 
-If the existing generator uses a different command line, use `make configure` to edit
-the two commands directly, then run `make finish`. The finishing target verifies the
-deploy key, clones or validates the dedicated publication checkout, validates the
-configuration, checks the systemd units, and only then enables the timers.
+The finishing target verifies the deploy key, clones or validates the dedicated
+publication checkout, validates the configuration, makes a real read-only ThetaData
+health check for SPY/SPX/VIX history, checks the systemd units, and only then enables
+the timers. To substitute a different generator, use `make configure-generator` or
+`make configure` before `make finish`.
 
 Useful operations:
 
 ```bash
 make help            # list targets
 make test            # run all tests without changing the Pi
+make check-thetadata # verify the local ThetaData terminal and entitlements
 make check-schedule  # inspect both market-time gates without publishing
 make status          # inspect timers and services
 make logs            # show today's service logs
@@ -160,7 +180,7 @@ sudo apt-get update
 sudo apt-get install -y git openssh-client python3 unzip
 
 sudo install -d -m 0755 /opt/spy-report-publisher
-sudo install -m 0755 market_calendar.py spy_report_publisher.py schedule_runner.py /opt/spy-report-publisher/
+sudo install -m 0755 market_calendar.py spy_report_publisher.py schedule_runner.py thetadata_report_generator.py /opt/spy-report-publisher/
 
 sudo install -d -m 0750 -o "$SPY_RUN_USER" -g "$SPY_RUN_GROUP" /etc/spy-report-publisher
 sudo install -d -m 0750 -o "$SPY_RUN_USER" -g "$SPY_RUN_GROUP" /var/lib/spy-report-publisher/incoming
@@ -234,23 +254,18 @@ expected because GitHub does not provide interactive shell access. If the destin
 checkout already exists, do not reclone it blindly; verify it is the intended clean
 checkout on `main`, then set `repo_dir` to that absolute path.
 
-Edit the two generator commands and working directory to match the existing Pi
-generator. This is the one installation-specific step that cannot be filled in from
-GitHub:
+The example configuration already selects the included ThetaData generator under
+`/opt/spy-report-publisher`; no generator edit is required. Confirm local ThetaData
+access before enabling timers:
+
+```bash
+/usr/bin/python3 /opt/spy-report-publisher/thetadata_report_generator.py --health-check
+```
+
+To use a different generator instead, edit the configuration:
 
 ```bash
 sudoedit /etc/spy-report-publisher/publisher.ini
-```
-
-For example, a generator at `/home/alice/spy-analysis/generate_report.py` should use:
-
-```ini
-[generator]
-working_directory = /home/alice/spy-analysis
-input_dir = /var/lib/spy-report-publisher/incoming
-timeout_seconds = 900
-premarket_command = /usr/bin/python3 /home/alice/spy-analysis/generate_report.py --session {session} --trading-date {trading_date} --output {output}
-postmarket_command = /usr/bin/python3 /home/alice/spy-analysis/generate_report.py --session {session} --trading-date {trading_date} --output {output}
 ```
 
 Install the service with the current login as the execution account, install the
@@ -297,7 +312,7 @@ Run the bundled tests before installation or directly from the extracted directo
 
 ```bash
 python3 -m unittest discover -s tests -v
-python3 -m py_compile market_calendar.py spy_report_publisher.py schedule_runner.py
+python3 -m py_compile market_calendar.py spy_report_publisher.py schedule_runner.py thetadata_report_generator.py
 ```
 
 The test suite uses temporary local Git repositories; it never contacts or modifies
@@ -306,7 +321,14 @@ the reported 05:17 UTC/date mismatch pattern, duplicate suppression, transaction
 commits, and premarket-to-postmarket advancement. On Linux (including Raspberry Pi),
 the integration test also pushes to a temporary local bare remote; Windows runs the
 same transaction without the local transport because some Git for Windows sandboxed
-installations cannot launch the file-transport helper.
+installations cannot launch the file-transport helper. Generator tests use deterministic
+ThetaData-shaped responses and do not contact a live account.
+
+Verify the real local ThetaData terminal and data entitlement:
+
+```bash
+/usr/bin/python3 /opt/spy-report-publisher/thetadata_report_generator.py --health-check
+```
 
 Check the schedule gate without running the generator:
 
@@ -332,8 +354,8 @@ Validate a newly generated report without touching Git:
   --validate-only
 ```
 
-After the generator configuration is correct, a manual service run exercises the
-same schedule gate as the timer. It will skip outside the due window:
+After the ThetaData health check passes, a manual service run exercises the same
+schedule gate as the timer. It will skip outside the due window:
 
 ```bash
 sudo systemctl start spy-report-publisher@premarket.service
@@ -372,10 +394,10 @@ Malformed or contradictory overrides stop the run.
 
 ## What is verified remotely vs. what remains local
 
-Verified from the public GitHub repository on 2026-11-06 UTC:
+Verified from the public GitHub repository before the first live deployment:
 
 - the default branch is `main`;
-- the visible repository content consists of `latest.json` at commit
+- the initial report-only state was commit
   `0dfd69eda1e6c6e34bd8e23620b209aaf9eafc2c`;
 - that commit is timestamped `2026-11-06T05:09:24Z`;
 - `latest.json` has `status: "test"` and says it is an integration test with no live
@@ -383,9 +405,9 @@ Verified from the public GitHub repository on 2026-11-06 UTC:
 
 Must be tested on the Raspberry Pi because GitHub cannot prove it:
 
-- the actual generator command, its dependencies/API credentials, and its output
-  schema;
-- file ownership and the service account's access to generator inputs;
+- the locally running Theta Terminal v3 service and the account's SPY/SPX/VIX data
+  entitlements;
+- live ThetaData response timing and file ownership for the service account;
 - the deploy key's write permission and outbound network/DNS access;
 - system clock synchronization and the installed timezone database;
 - systemd timer firing, journal/file logging, a real commit, and a successful push;

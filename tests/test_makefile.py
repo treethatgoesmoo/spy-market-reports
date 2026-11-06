@@ -22,6 +22,7 @@ class MakefileTests(unittest.TestCase):
             {
                 "bootstrap",
                 "configure-generator",
+                "check-thetadata",
                 "finish",
                 "test",
                 "update",

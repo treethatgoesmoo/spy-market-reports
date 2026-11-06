@@ -15,11 +15,11 @@ log_file = /var/log/spy-report-publisher/publisher.log
 [generator]
 # Commands are tokenized without a shell. These placeholders are supported:
 # {session}, {trading_date}, and {output}.
-working_directory = /home/pi/spy-analysis
+working_directory = /opt/spy-report-publisher
 input_dir = /var/lib/spy-report-publisher/incoming
 timeout_seconds = 900
-premarket_command = /usr/bin/python3 /home/pi/spy-analysis/generate_report.py --session {session} --trading-date {trading_date} --output {output}
-postmarket_command = /usr/bin/python3 /home/pi/spy-analysis/generate_report.py --session {session} --trading-date {trading_date} --output {output}
+premarket_command = /usr/bin/python3 /opt/spy-report-publisher/thetadata_report_generator.py --session {session} --trading-date {trading_date} --output {output}
+postmarket_command = /usr/bin/python3 /opt/spy-report-publisher/thetadata_report_generator.py --session {session} --trading-date {trading_date} --output {output}
 
 [schedule]
 premarket_time = 08:45
