@@ -1,0 +1,14 @@
+{
+  "symbol": "SPY",
+  "status": "live",
+  "market_timezone": "America/New_York",
+  "session": "postmarket",
+  "trading_date": "2026-11-06",
+  "generated_at": "2026-11-06T21:30:00Z",
+  "source": "raspberry-pi",
+  "forecast": {
+    "bias": "bullish",
+    "confidence": 0.72
+  }
+}
+

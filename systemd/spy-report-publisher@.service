@@ -1,0 +1,23 @@
+[Unit]
+Description=Generate and publish SPY %i report
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__RUN_USER__
+Group=__RUN_GROUP__
+WorkingDirectory=/opt/spy-report-publisher
+ExecStart=/usr/bin/python3 /opt/spy-report-publisher/schedule_runner.py --config /etc/spy-report-publisher/publisher.ini --session %i
+Environment="PYTHONDONTWRITEBYTECODE=1"
+Environment="GIT_TERMINAL_PROMPT=0"
+Environment="GIT_SSH_COMMAND=/usr/bin/ssh -i /etc/spy-report-publisher/deploy_key -o IdentitiesOnly=yes -o UserKnownHostsFile=/etc/spy-report-publisher/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes"
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/spy-market-reports /var/lib/spy-report-publisher /var/log/spy-report-publisher
+LockPersonality=true
+RestrictSUIDSGID=true
+UMask=0077
+

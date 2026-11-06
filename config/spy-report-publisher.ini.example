@@ -1,0 +1,27 @@
+[publisher]
+repo_dir = /srv/spy-market-reports
+expected_repository = treethatgoesmoo/spy-market-reports
+remote = origin
+branch = main
+max_age_minutes = 120
+clock_skew_minutes = 5
+postmarket_tolerance_minutes = 5
+push_retries = 2
+calendar_overrides = /etc/spy-report-publisher/calendar-overrides.json
+git_author_name = SPY Report Publisher
+git_author_email = spy-report-publisher@localhost
+log_file = /var/log/spy-report-publisher/publisher.log
+
+[generator]
+# Commands are tokenized without a shell. These placeholders are supported:
+# {session}, {trading_date}, and {output}.
+working_directory = /home/pi/spy-analysis
+input_dir = /var/lib/spy-report-publisher/incoming
+timeout_seconds = 900
+premarket_command = /usr/bin/python3 /home/pi/spy-analysis/generate_report.py --session {session} --trading-date {trading_date} --output {output}
+postmarket_command = /usr/bin/python3 /home/pi/spy-analysis/generate_report.py --session {session} --trading-date {trading_date} --output {output}
+
+[schedule]
+premarket_time = 08:45
+due_tolerance_minutes = 20
+

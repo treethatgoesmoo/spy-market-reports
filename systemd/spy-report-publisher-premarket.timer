@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule SPY premarket report on weekday mornings
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 08:45:00 America/New_York
+AccuracySec=15s
+Persistent=true
+Unit=spy-report-publisher@premarket.service
+
+[Install]
+WantedBy=timers.target
+

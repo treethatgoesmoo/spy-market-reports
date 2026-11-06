@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule SPY postmarket report after a possible 13:00 ET close
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 13:30:00 America/New_York
+AccuracySec=15s
+Persistent=true
+Unit=spy-report-publisher@postmarket.service
+
+[Install]
+WantedBy=timers.target
+

@@ -1,0 +1,11 @@
+{
+  "symbol": "SPY",
+  "status": "test",
+  "market_timezone": "America/New_York",
+  "session": "premarket",
+  "trading_date": "2026-11-06",
+  "generated_at": "2026-11-06T13:45:00Z",
+  "source": "raspberry-pi",
+  "message": "Integration test only. No live market data."
+}
+
