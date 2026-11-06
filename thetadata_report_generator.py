@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Generate a transparent SPY market report from a local ThetaData v3 terminal.
 
-The generator deliberately uses only the Python standard library.  It retrieves SPY
-OHLC bars plus SPX/VIX index prices, calculates conventional trend/momentum/risk
-indicators, and writes the strict JSON contract consumed by spy_report_publisher.py.
+The generator deliberately uses only the Python standard library. It retrieves SPY
+OHLC bars, calculates conventional trend/momentum/risk indicators, and writes the
+strict JSON contract consumed by spy_report_publisher.py. It never requests an index
+endpoint, so it works with a stock STANDARD subscription and FREE index access.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ import json
 import logging
 import math
 import os
-import re
 import statistics
 import sys
 import tempfile
@@ -31,10 +31,8 @@ from market_calendar import EASTERN, market_hours
 
 
 LOGGER = logging.getLogger("thetadata_report_generator")
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 DEFAULT_BASE_URL = "http://127.0.0.1:25503/v3"
-DEFAULT_INDICES = ("SPX", "VIX")
-SYMBOL_PATTERN = re.compile(r"^[A-Z0-9._-]{1,20}$")
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 
 
@@ -56,17 +54,6 @@ class DailyBar:
     volume: int
     vwap: float
     bar_count: int
-    last_timestamp: str
-
-
-@dataclass(frozen=True)
-class DailyIndex:
-    trading_date: date
-    open: float
-    high: float
-    low: float
-    close: float
-    observation_count: int
     last_timestamp: str
 
 
@@ -93,16 +80,6 @@ def _validate_base_url(value: str, allow_remote: bool = False) -> str:
                 "ThetaData must use a loopback address unless --allow-remote-thetadata is set"
             )
     return value.rstrip("/")
-
-
-def _symbols(value: str) -> tuple[str, ...]:
-    symbols = tuple(dict.fromkeys(part.strip().upper() for part in value.split(",") if part.strip()))
-    if not symbols:
-        raise GeneratorError("at least one index symbol is required")
-    invalid = [symbol for symbol in symbols if not SYMBOL_PATTERN.fullmatch(symbol)]
-    if invalid:
-        raise GeneratorError(f"invalid index symbols: {invalid}")
-    return symbols
 
 
 class ThetaDataClient:
@@ -217,28 +194,6 @@ class ThetaDataClient:
             },
         )
 
-    def index_price(
-        self,
-        symbol: str,
-        start_date: date,
-        end_date: date,
-        *,
-        interval: str = "5m",
-    ) -> list[dict[str, Any]]:
-        return self._rows(
-            "/index/history/price",
-            {
-                "symbol": symbol,
-                "start_date": start_date.strftime("%Y%m%d"),
-                "end_date": end_date.strftime("%Y%m%d"),
-                "interval": interval,
-                "start_time": "09:30:00.000",
-                "end_time": "16:00:00.000",
-                "format": "json",
-            },
-        )
-
-
 def _number(value: Any, label: str, *, positive: bool = False) -> float:
     if isinstance(value, bool):
         raise GeneratorError(f"{label} must be numeric")
@@ -292,29 +247,6 @@ def aggregate_stock_rows(rows: Sequence[Mapping[str, Any]]) -> list[DailyBar]:
                 volume=total_volume,
                 vwap=weighted_vwap / divisor,
                 bar_count=len(ordered),
-                last_timestamp=str(ordered[-1]["timestamp"]),
-            )
-        )
-    return daily
-
-
-def aggregate_index_rows(rows: Sequence[Mapping[str, Any]]) -> list[DailyIndex]:
-    grouped: dict[date, list[Mapping[str, Any]]] = {}
-    for row in rows:
-        day = _timestamp_date(row.get("timestamp"), "index")
-        grouped.setdefault(day, []).append(row)
-    daily: list[DailyIndex] = []
-    for day, day_rows in sorted(grouped.items()):
-        ordered = sorted(day_rows, key=lambda row: str(row.get("timestamp", "")))
-        prices = [_number(row.get("price"), "index price", positive=True) for row in ordered]
-        daily.append(
-            DailyIndex(
-                trading_date=day,
-                open=prices[0],
-                high=max(prices),
-                low=min(prices),
-                close=prices[-1],
-                observation_count=len(prices),
                 last_timestamp=str(ordered[-1]["timestamp"]),
             )
         )
@@ -423,8 +355,6 @@ def build_report(
     trading_date: date,
     generated_at: datetime,
     stock_rows: Sequence[Mapping[str, Any]],
-    index_rows: Mapping[str, Sequence[Mapping[str, Any]]],
-    required_indices: Sequence[str] = DEFAULT_INDICES,
 ) -> dict[str, Any]:
     if session not in {"premarket", "postmarket"}:
         raise GeneratorError("session must be premarket or postmarket")
@@ -441,20 +371,6 @@ def build_report(
             f"SPY data ends on {stock[-1].trading_date}; expected {expected_data_date} "
             f"for {session}"
         )
-
-    indices: dict[str, list[DailyIndex]] = {}
-    for symbol in required_indices:
-        daily = aggregate_index_rows(index_rows.get(symbol, []))
-        if len(daily) < 5:
-            raise GeneratorError(
-                f"need at least 5 {symbol} sessions; received {len(daily)}"
-            )
-        if daily[-1].trading_date != expected_data_date:
-            raise GeneratorError(
-                f"{symbol} data ends on {daily[-1].trading_date}; expected "
-                f"{expected_data_date} for {session}"
-            )
-        indices[symbol] = daily
 
     closes = [bar.close for bar in stock]
     sma5 = _sma(closes, 5)
@@ -522,43 +438,6 @@ def build_report(
         "RSI trend confirmation with a small mean-reversion adjustment at extremes",
     )
 
-    if "SPX" in indices:
-        spx_values = [item.close for item in indices["SPX"]]
-        spx_momentum5 = _momentum(spx_values, 5)
-        contribution = 0.0
-        if spx_momentum5 is not None:
-            contribution = 1.0 if spx_momentum5 > 0.50 else -1.0 if spx_momentum5 < -0.50 else 0.0
-        score += _add_signal(
-            signals,
-            "spx_momentum_5d_pct",
-            spx_momentum5,
-            contribution,
-            "Broad-market confirmation from SPX",
-        )
-
-    if "VIX" in indices:
-        vix_values = [item.close for item in indices["VIX"]]
-        vix_momentum5 = _momentum(vix_values, 5)
-        contribution = 0.0
-        if vix_momentum5 is not None:
-            contribution = 1.0 if vix_momentum5 < -3.0 else -1.0 if vix_momentum5 > 3.0 else 0.0
-        score += _add_signal(
-            signals,
-            "vix_momentum_5d_pct",
-            vix_momentum5,
-            contribution,
-            "Falling volatility supports risk appetite; rising volatility opposes it",
-        )
-        vix_level = vix_values[-1]
-        contribution = 0.5 if vix_level < 18 else -0.5 if vix_level > 25 else 0.0
-        score += _add_signal(
-            signals,
-            "vix_level",
-            vix_level,
-            contribution,
-            "Absolute volatility regime",
-        )
-
     session_return = _pct_change(latest.close, latest.open)
     contribution = 0.5 if session_return > 0.35 else -0.5 if session_return < -0.35 else 0.0
     score += _add_signal(
@@ -575,17 +454,6 @@ def build_report(
     confidence = min(0.90, (0.48 + 0.37 * strength) * data_completeness)
     if bias == "neutral":
         confidence = min(confidence, 0.62)
-
-    index_summary: dict[str, Any] = {}
-    for symbol, daily in indices.items():
-        values = [item.close for item in daily]
-        index_summary[symbol] = {
-            "as_of": daily[-1].last_timestamp,
-            "price": _rounded(values[-1]),
-            "change_1d_pct": _rounded(_momentum(values, 1)),
-            "momentum_5d_pct": _rounded(_momentum(values, 5)),
-            "sessions": len(daily),
-        }
 
     rationale = [
         f"{item['name']} contributed {item['contribution']:+g}"
@@ -616,9 +484,8 @@ def build_report(
             "volume": latest.volume,
             "intraday_return_pct": _rounded(session_return),
         },
-        "indices": index_summary,
         "analysis": {
-            "method": "transparent-rule-score-v1",
+            "method": "transparent-stock-rule-score-v1",
             "score": round(score, 2),
             "signals": signals,
             "indicators": {
@@ -649,7 +516,7 @@ def build_report(
             "spy_sessions": len(stock),
             "spy_bars_latest_session": latest.bar_count,
             "completeness": round(data_completeness, 2),
-            "required_indices": list(required_indices),
+            "inputs": ["SPY stock OHLC"],
         },
         "generator": {
             "name": "thetadata_report_generator",
@@ -664,7 +531,6 @@ def generate_report(
     *,
     session: str,
     trading_date: date,
-    indices: Sequence[str],
     interval: str,
     venue: str,
     lookback_calendar_days: int,
@@ -680,23 +546,15 @@ def generate_report(
     stock_rows = client.stock_ohlc(
         "SPY", data_start, data_end, interval=interval, venue=venue
     )
-    index_rows: dict[str, list[dict[str, Any]]] = {}
-    for symbol in indices:
-        LOGGER.info("requesting %s data from %s through %s", symbol, data_start, data_end)
-        index_rows[symbol] = client.index_price(
-            symbol, data_start, data_end, interval=interval
-        )
     return build_report(
         session=session,
         trading_date=trading_date,
         generated_at=generated_at or datetime.now(timezone.utc),
         stock_rows=stock_rows,
-        index_rows=index_rows,
-        required_indices=indices,
     )
 
 
-def health_check(client: ThetaDataClient, indices: Sequence[str]) -> dict[str, Any]:
+def health_check(client: ThetaDataClient) -> dict[str, Any]:
     today = datetime.now(EASTERN).date()
     # Always use the last completed session so setup works before the open and does
     # not depend on whether a current hourly bar has completed yet.
@@ -704,18 +562,12 @@ def health_check(client: ThetaDataClient, indices: Sequence[str]) -> dict[str, A
     stock = client.stock_ohlc("SPY", day, day, interval="1h", venue="nqb")
     if not stock:
         raise ThetaDataError(f"ThetaData returned no SPY rows for {day}")
-    found: dict[str, int] = {}
-    for symbol in indices:
-        rows = client.index_price(symbol, day, day, interval="1h")
-        if not rows:
-            raise ThetaDataError(f"ThetaData returned no {symbol} rows for {day}")
-        found[symbol] = len(rows)
     return {
         "ok": True,
         "base_url": client.base_url,
         "checked_date": day.isoformat(),
         "spy_rows": len(stock),
-        "index_rows": found,
+        "data_scope": "SPY stock OHLC only",
     }
 
 
@@ -753,11 +605,6 @@ def _parser() -> argparse.ArgumentParser:
         "--base-url",
         default=os.environ.get("THETADATA_BASE_URL", DEFAULT_BASE_URL),
     )
-    parser.add_argument(
-        "--indices",
-        default=os.environ.get("THETADATA_INDICES", ",".join(DEFAULT_INDICES)),
-        help="comma-separated index symbols (default: SPX,VIX)",
-    )
     parser.add_argument("--interval", default="5m")
     parser.add_argument("--venue", choices=("nqb", "utp_cta"), default="nqb")
     parser.add_argument("--lookback-calendar-days", type=int, default=30)
@@ -776,7 +623,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     try:
-        indices = _symbols(args.indices)
         client = ThetaDataClient(
             args.base_url,
             timeout_seconds=args.timeout_seconds,
@@ -784,7 +630,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             allow_remote=args.allow_remote_thetadata,
         )
         if args.health_check:
-            print(json.dumps(health_check(client, indices), indent=2, sort_keys=True))
+            print(json.dumps(health_check(client), indent=2, sort_keys=True))
             return 0
         missing = [
             name
@@ -803,7 +649,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             client,
             session=args.session,
             trading_date=args.trading_date,
-            indices=indices,
             interval=args.interval,
             venue=args.venue,
             lookback_calendar_days=args.lookback_calendar_days,

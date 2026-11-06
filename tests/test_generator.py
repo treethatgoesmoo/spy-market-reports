@@ -13,6 +13,7 @@ from thetadata_report_generator import (
     GeneratorError,
     ThetaDataClient,
     build_report,
+    health_check,
     write_report,
 )
 
@@ -61,25 +62,6 @@ def stock_rows(days: list[date]) -> list[dict]:
     return rows
 
 
-def index_rows(days: list[date], *, start: float, daily_move: float) -> list[dict]:
-    rows: list[dict] = []
-    for index, day in enumerate(days):
-        price = start + daily_move * index
-        rows.extend(
-            [
-                {
-                    "timestamp": f"{day.isoformat()}T09:30:00.000",
-                    "price": price,
-                },
-                {
-                    "timestamp": f"{day.isoformat()}T15:59:00.000",
-                    "price": price + daily_move * 0.8,
-                },
-            ]
-        )
-    return rows
-
-
 class FakeResponse:
     def __init__(self, payload: object) -> None:
         self.payload = json.dumps(payload).encode("utf-8")
@@ -104,14 +86,18 @@ class GeneratorTests(unittest.TestCase):
             trading_date=date(2026, 11, 6),
             generated_at=generated,
             stock_rows=stock_rows(days),
-            index_rows={
-                "SPX": index_rows(days, start=5800, daily_move=20),
-                "VIX": index_rows(days, start=28, daily_move=-0.45),
-            },
         )
         self.assertEqual(report["status"], "live")
         self.assertEqual(report["data_through"], "2026-11-05")
         self.assertEqual(report["forecast"]["bias"], "bullish")
+        self.assertEqual(report["data_quality"]["inputs"], ["SPY stock OHLC"])
+        self.assertNotIn("indices", report)
+        self.assertFalse(
+            any(
+                signal["name"].startswith(("spx_", "vix_"))
+                for signal in report["analysis"]["signals"]
+            )
+        )
         validate_report(
             report,
             expected_session="premarket",
@@ -126,10 +112,6 @@ class GeneratorTests(unittest.TestCase):
             trading_date=date(2026, 11, 6),
             generated_at=generated,
             stock_rows=stock_rows(days),
-            index_rows={
-                "SPX": index_rows(days, start=5800, daily_move=20),
-                "VIX": index_rows(days, start=28, daily_move=-0.45),
-            },
         )
         self.assertEqual(report["data_through"], "2026-11-06")
         validate_report(
@@ -171,6 +153,22 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(query["symbol"], ["SPY"])
         self.assertEqual(query["format"], ["json"])
 
+    def test_health_check_requests_only_spy_stock_data(self) -> None:
+        captured: list[str] = []
+
+        def opener(request, timeout):
+            captured.append(request.full_url)
+            return FakeResponse({"response": [{"timestamp": "2026-11-05T15:00:00.000"}]})
+
+        result = health_check(ThetaDataClient(opener=opener, retries=0))
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data_scope"], "SPY stock OHLC only")
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(
+            urllib.parse.urlsplit(captured[0]).path,
+            "/v3/stock/history/ohlc",
+        )
+
     def test_remote_thetadata_url_is_rejected_by_default(self) -> None:
         with self.assertRaisesRegex(GeneratorError, "loopback"):
             ThetaDataClient("http://example.com:25503/v3")
@@ -182,10 +180,6 @@ class GeneratorTests(unittest.TestCase):
             trading_date=date(2026, 11, 6),
             generated_at=datetime(2026, 11, 6, 13, 45, tzinfo=timezone.utc),
             stock_rows=stock_rows(days),
-            index_rows={
-                "SPX": index_rows(days, start=5800, daily_move=20),
-                "VIX": index_rows(days, start=28, daily_move=-0.45),
-            },
         )
         test_temp_root = ROOT / ".test-tmp"
         test_temp_root.mkdir(exist_ok=True)

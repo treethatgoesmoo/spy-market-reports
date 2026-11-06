@@ -244,6 +244,6 @@ next-steps:
 	  '1. Add the deploy key above in GitHub repository Settings > Deploy keys with write access.' \
 	  '2. Ensure Theta Terminal v3 is running locally on port 25503.' \
 	  '3. Complete setup and verify ThetaData: make finish' \
-	  'The included SPY/SPX/VIX generator is already configured.' \
+	  'The included stock-only SPY generator is already configured.' \
 	  ''
 

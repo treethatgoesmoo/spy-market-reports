@@ -1,11 +1,11 @@
 # SPY ThetaData report generator and publisher for Raspberry Pi
 
 This repository contains a standard-library-only Python pipeline that calls a locally
-running ThetaData v3 terminal, gathers SPY plus SPX/VIX data, creates a transparent
+running ThetaData v3 terminal, gathers SPY stock data, creates a transparent
 rule-based market report, validates it, writes `reports/YYYYMMDD.json`, updates
 `latest.json`, commits the two paths on `main`, and pushes them to this repository.
 
-Package version: **1.1.0**.
+Package version: **1.2.0**.
 
 The publisher is intentionally fail-closed. Validation finishes before it accesses
 Git. A bad report cannot replace `latest.json`.
@@ -44,19 +44,18 @@ is required. It connects to Theta Terminal v3 at
 `http://127.0.0.1:25503/v3` and requests:
 
 - 5-minute SPY bars from `/stock/history/ohlc`;
-- SPX and VIX prices from `/index/history/price`;
 - up to 30 calendar days of regular-session history.
 
 It calculates moving averages, EMA trend, RSI, ATR, realized volatility, price and
-volume momentum, SPX confirmation, and the VIX trend/regime. Every contribution to
-the final bullish/neutral/bearish score is stored in `analysis.signals`; the result is
-an explainable rule-based research summary, not a trained model or investment advice.
+volume momentum. Every contribution to the final bullish/neutral/bearish score is
+stored in `analysis.signals`; the result is an explainable rule-based research
+summary, not a trained model or investment advice.
 
 Theta Terminal must already be running on the same Pi, and the ThetaData account must
-have access to stock OHLC and index-price history. The generator refuses non-loopback
-ThetaData URLs by default, rejects malformed/stale responses, and will not produce a
-partial report when SPY, SPX, or VIX data is missing. Override the index set with the
-`THETADATA_INDICES` environment variable or `--indices` when needed.
+have access to stock OHLC history. The generator refuses non-loopback ThetaData URLs
+by default and rejects malformed, incomplete, or stale SPY responses. It does not
+request index data; ThetaData STANDARD stock access with FREE index access is the
+intended subscription combination.
 
 ## Required report contract
 
@@ -146,7 +145,7 @@ make finish
 
 The finishing target verifies the deploy key, clones or validates the dedicated
 publication checkout, validates the configuration, makes a real read-only ThetaData
-health check for SPY/SPX/VIX history, checks the systemd units, and only then enables
+health check for SPY stock history, checks the systemd units, and only then enables
 the timers. To substitute a different generator, use `make configure-generator` or
 `make configure` before `make finish`.
 
@@ -405,8 +404,8 @@ Verified from the public GitHub repository before the first live deployment:
 
 Must be tested on the Raspberry Pi because GitHub cannot prove it:
 
-- the locally running Theta Terminal v3 service and the account's SPY/SPX/VIX data
-  entitlements;
+- the locally running Theta Terminal v3 service and the account's SPY stock-data
+  entitlement;
 - live ThetaData response timing and file ownership for the service account;
 - the deploy key's write permission and outbound network/DNS access;
 - system clock synchronization and the installed timezone database;
