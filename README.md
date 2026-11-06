@@ -98,6 +98,57 @@ These commands target current Raspberry Pi OS with Python 3.9 or newer and syste
 Run them from the extracted `spy-report-publisher` package directory. They do **not**
 claim or assume that anything is already installed on the Pi.
 
+### Easier setup with Make
+
+On the Raspberry Pi, clone this repository and run the guarded two-stage installer:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git make
+git clone https://github.com/treethatgoesmoo/spy-market-reports.git
+cd spy-market-reports
+make bootstrap
+```
+
+`bootstrap` runs the tests, installs dependencies and component files, creates or
+preserves the deploy key, pins GitHub's published Ed25519 host key, installs the
+configuration if it does not already exist, and installs—but does not enable—the
+systemd units. It prints the public deploy key and the remaining steps.
+
+Add that public key under the repository's **Settings → Deploy keys**, enable
+**Allow write access**, then configure the existing generator. For a generator that
+implements the documented `--session`, `--trading-date`, and `--output` interface:
+
+```bash
+make configure-generator \
+  GENERATOR_DIR=/absolute/path/to/your/generator \
+  GENERATOR_SCRIPT=/absolute/path/to/your/generator/generate_report.py
+make finish
+```
+
+If the existing generator uses a different command line, use `make configure` to edit
+the two commands directly, then run `make finish`. The finishing target verifies the
+deploy key, clones or validates the dedicated publication checkout, validates the
+configuration, checks the systemd units, and only then enables the timers.
+
+Useful operations:
+
+```bash
+make help            # list targets
+make test            # run all tests without changing the Pi
+make check-schedule  # inspect both market-time gates without publishing
+make status          # inspect timers and services
+make logs            # show today's service logs
+make update          # update code/units without replacing config or credentials
+make disable-timers  # stop scheduling without deleting reports or configuration
+```
+
+Override `RUN_USER`, `RUN_GROUP`, `PREFIX`, `CONFIG_DIR`, or `REPO_DIR` on the Make
+command line when the defaults are not appropriate. Run `make` as the intended login
+user, not as `root`; individual privileged installation steps invoke `sudo`.
+
+### Manual installation
+
 First install the operating-system prerequisites and the component:
 
 ```bash
