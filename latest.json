@@ -1,0 +1,10 @@
+{
+  "symbol": "SPY",
+  "status": "test",
+  "source": "raspberry-pi",
+  "forecast": {
+    "bias": "unavailable",
+    "confidence": null
+  },
+  "message": "Integration test only. No live market data."
+}
