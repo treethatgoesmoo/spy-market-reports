@@ -27,6 +27,7 @@ class MakefileTests(unittest.TestCase):
                 "test",
                 "update",
                 "disable-timers",
+                "clear-failures",
             }.issubset(targets)
         )
 
@@ -53,6 +54,14 @@ class MakefileTests(unittest.TestCase):
         timer_text = timer.read_text(encoding="utf-8")
         self.assertIn("10..15:35:00 America/New_York", timer_text)
         self.assertIn("spy-report-publisher@intraday.service", timer_text)
+
+    def test_status_never_opens_a_pager_and_failures_can_be_cleared(self) -> None:
+        self.assertIn(
+            "systemctl list-timers 'spy-report-publisher*' --all --no-pager",
+            self.text,
+        )
+        self.assertIn("clear-failures:", self.text)
+        self.assertIn("systemctl reset-failed", self.text)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ rule-based market report, validates it, writes `reports/YYYYMMDD.json`, updates
 `latest.json`, commits the paths on `main`, and pushes them to this repository.
 Intraday runs also archive immutable hourly signals below `reports/YYYYMMDD/`.
 
-Package version: **1.3.0**.
+Package version: **1.3.1**.
 
 The publisher is intentionally fail-closed. Validation finishes before it accesses
 Git. A bad report cannot replace `latest.json`.
@@ -177,8 +177,9 @@ Useful operations:
 make help            # list targets
 make test            # run all tests without changing the Pi
 make check-thetadata # verify the local ThetaData terminal and entitlements
-make check-schedule  # inspect both market-time gates without publishing
+make check-schedule  # inspect all market-time gates without publishing
 make status          # inspect timers and services
+make clear-failures  # clear retained failed status; journal logs are preserved
 make logs            # show today's service logs
 make update          # update code/units without replacing config or credentials
 make disable-timers  # stop scheduling without deleting reports or configuration

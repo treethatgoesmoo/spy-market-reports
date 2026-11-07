@@ -36,7 +36,7 @@ GENERATOR_SCRIPT ?=
 .PHONY: help check-user test check deps install install-files install-config \
 	setup-key show-key install-systemd bootstrap configure configure-generator \
 	verify-config verify-auth clone-repo check-thetadata check-schedule enable-timers \
-	disable-timers finish update status logs next-steps
+	disable-timers clear-failures finish update status logs next-steps
 
 help: ## Show the available setup and operations targets.
 	@printf '%s\n' \
@@ -234,8 +234,14 @@ finish: verify-auth clone-repo verify-config check-thetadata enable-timers ## Ve
 update: install-files install-systemd ## Update code and unit files while preserving config and credentials.
 	@echo 'Publisher code updated. Existing configuration and deploy key were preserved.'
 
-status: ## Show timer and recent service status.
-	@systemctl list-timers 'spy-report-publisher*' --no-pager || true
+clear-failures: ## Clear retained failed status for publisher services without deleting logs.
+	$(SUDO) systemctl reset-failed \
+	  spy-report-publisher@premarket.service \
+	  spy-report-publisher@intraday.service \
+	  spy-report-publisher@postmarket.service
+
+status: ## Show all publisher timers and recent service status without a pager.
+	@systemctl list-timers 'spy-report-publisher*' --all --no-pager || true
 	@systemctl --no-pager --full status 'spy-report-publisher@premarket.service' 'spy-report-publisher@intraday.service' 'spy-report-publisher@postmarket.service' || true
 
 logs: ## Show today's publisher service logs.
