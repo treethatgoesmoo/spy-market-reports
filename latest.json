@@ -1,10 +1,93 @@
 {
-  "symbol": "SPY",
-  "status": "test",
-  "source": "raspberry-pi",
-  "forecast": {
-    "bias": "unavailable",
-    "confidence": null
+  "analysis": {
+    "indicators": {
+      "atr14": 11.1111,
+      "ema12": 755.3741,
+      "ema26": 762.4874,
+      "momentum_1d_pct": 0.3151,
+      "momentum_20d_pct": -5.5348,
+      "momentum_5d_pct": -2.6797,
+      "realized_volatility_20d_pct": 19.8647,
+      "rsi14": 34.8824,
+      "sma20": 763.376,
+      "sma5": 748.364,
+      "volume_vs_20d_average": 0.6794
+    },
+    "method": "transparent-stock-rule-score-v1",
+    "score": -3.5,
+    "signals": [
+      {
+        "contribution": -1.0,
+        "name": "spy_close_vs_sma20",
+        "reason": "SPY close relative to its available 20-session simple moving average",
+        "value": -3.6595
+      },
+      {
+        "contribution": -1.0,
+        "name": "spy_sma5_vs_sma20",
+        "reason": "Short trend relative to the medium trend",
+        "value": -1.9665
+      },
+      {
+        "contribution": -1.0,
+        "name": "spy_momentum_5d_pct",
+        "reason": "Five-session SPY price momentum",
+        "value": -2.6797
+      },
+      {
+        "contribution": -0.5,
+        "name": "spy_rsi14",
+        "reason": "RSI trend confirmation with a small mean-reversion adjustment at extremes",
+        "value": 34.8824
+      },
+      {
+        "contribution": 0.0,
+        "name": "latest_session_return_pct",
+        "reason": "Most recent completed regular session direction",
+        "value": 0.0803
+      }
+    ]
   },
-  "message": "Integration test only. No live market data."
+  "data_quality": {
+    "completeness": 1.0,
+    "inputs": [
+      "SPY stock OHLC"
+    ],
+    "spy_bars_latest_session": 78,
+    "spy_sessions": 22
+  },
+  "data_through": "2026-11-06",
+  "disclaimer": "Rule-based market context for research; not investment advice.",
+  "forecast": {
+    "bias": "bearish",
+    "confidence": 0.77,
+    "horizon": "next regular session directional context",
+    "rationale": [
+      "spy_close_vs_sma20 contributed -1",
+      "spy_sma5_vs_sma20 contributed -1",
+      "spy_momentum_5d_pct contributed -1",
+      "spy_rsi14 contributed -0.5"
+    ]
+  },
+  "generated_at": "2026-11-07T02:34:31.614353Z",
+  "generator": {
+    "name": "thetadata_report_generator",
+    "version": "1.2.2"
+  },
+  "market": {
+    "as_of": "2026-11-06T15:55:00.000",
+    "close": 735.44,
+    "high": 742.2104,
+    "intraday_return_pct": 0.0803,
+    "low": 734.58,
+    "open": 734.85,
+    "volume": 25370498,
+    "vwap": 738.3444
+  },
+  "market_timezone": "America/New_York",
+  "session": "postmarket",
+  "source": "thetadata-local-v3",
+  "status": "live",
+  "symbol": "SPY",
+  "trading_date": "2026-11-06"
 }
