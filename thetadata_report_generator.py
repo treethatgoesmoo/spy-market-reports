@@ -31,7 +31,7 @@ from market_calendar import EASTERN, market_hours
 
 
 LOGGER = logging.getLogger("thetadata_report_generator")
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 DEFAULT_BASE_URL = "http://127.0.0.1:25503/v3"
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 
@@ -215,18 +215,74 @@ def _timestamp_date(value: Any, label: str) -> date:
         raise GeneratorError(f"{label} timestamp is invalid: {value!r}") from exc
 
 
+def _is_empty_stock_bar(row: Mapping[str, Any]) -> bool:
+    """Return true only for ThetaData's all-zero, no-trade placeholder bars."""
+    values: list[float] = []
+    for field in ("open", "high", "low", "close", "volume", "count"):
+        try:
+            value = float(row.get(field))
+        except (TypeError, ValueError):
+            return False
+        if not math.isfinite(value):
+            return False
+        values.append(value)
+    raw_vwap = row.get("vwap")
+    if raw_vwap is not None:
+        try:
+            vwap = float(raw_vwap)
+        except (TypeError, ValueError):
+            return False
+        if not math.isfinite(vwap) or vwap != 0:
+            return False
+    return all(value == 0 for value in values)
+
+
 def aggregate_stock_rows(rows: Sequence[Mapping[str, Any]]) -> list[DailyBar]:
     grouped: dict[date, list[Mapping[str, Any]]] = {}
+    empty_bars = 0
     for row in rows:
         day = _timestamp_date(row.get("timestamp"), "stock")
+        if _is_empty_stock_bar(row):
+            empty_bars += 1
+            continue
         grouped.setdefault(day, []).append(row)
+    if empty_bars:
+        LOGGER.warning("ignored %d all-zero no-trade SPY bars", empty_bars)
     daily: list[DailyBar] = []
     for day, day_rows in sorted(grouped.items()):
         ordered = sorted(day_rows, key=lambda row: str(row.get("timestamp", "")))
-        opens = [_number(row.get("open"), "stock open", positive=True) for row in ordered]
-        highs = [_number(row.get("high"), "stock high", positive=True) for row in ordered]
-        lows = [_number(row.get("low"), "stock low", positive=True) for row in ordered]
-        closes = [_number(row.get("close"), "stock close", positive=True) for row in ordered]
+        opens = [
+            _number(
+                row.get("open"),
+                f"stock open at {row.get('timestamp')}",
+                positive=True,
+            )
+            for row in ordered
+        ]
+        highs = [
+            _number(
+                row.get("high"),
+                f"stock high at {row.get('timestamp')}",
+                positive=True,
+            )
+            for row in ordered
+        ]
+        lows = [
+            _number(
+                row.get("low"),
+                f"stock low at {row.get('timestamp')}",
+                positive=True,
+            )
+            for row in ordered
+        ]
+        closes = [
+            _number(
+                row.get("close"),
+                f"stock close at {row.get('timestamp')}",
+                positive=True,
+            )
+            for row in ordered
+        ]
         volumes = [max(0, int(_number(row.get("volume", 0), "stock volume"))) for row in ordered]
         if any(high < low for high, low in zip(highs, lows)):
             raise GeneratorError(f"stock high is below low on {day}")
@@ -562,11 +618,15 @@ def health_check(client: ThetaDataClient) -> dict[str, Any]:
     stock = client.stock_ohlc("SPY", day, day, interval="1h", venue="nqb")
     if not stock:
         raise ThetaDataError(f"ThetaData returned no SPY rows for {day}")
+    usable_sessions = aggregate_stock_rows(stock)
+    if not usable_sessions:
+        raise ThetaDataError(f"ThetaData returned no usable SPY bars for {day}")
     return {
         "ok": True,
         "base_url": client.base_url,
         "checked_date": day.isoformat(),
         "spy_rows": len(stock),
+        "usable_sessions": len(usable_sessions),
         "data_scope": "SPY stock OHLC only",
     }
 

@@ -120,6 +120,56 @@ class GeneratorTests(unittest.TestCase):
             now=generated + timedelta(minutes=1),
         )
 
+    def test_all_zero_no_trade_placeholder_bar_is_ignored(self) -> None:
+        days = trading_days_ending(date(2026, 11, 5), 22)
+        rows = stock_rows(days)
+        rows.append(
+            {
+                "timestamp": "2026-11-05T16:00:00.000",
+                "open": 0,
+                "high": 0,
+                "low": 0,
+                "close": 0,
+                "volume": 0,
+                "count": 0,
+                "vwap": 0,
+            }
+        )
+        report = build_report(
+            session="premarket",
+            trading_date=date(2026, 11, 6),
+            generated_at=datetime(2026, 11, 6, 13, 45, tzinfo=timezone.utc),
+            stock_rows=rows,
+        )
+        self.assertEqual(report["market"]["as_of"], "2026-11-05T15:55:00.000")
+        self.assertEqual(report["data_quality"]["spy_bars_latest_session"], 2)
+
+    def test_partial_zero_price_bar_is_rejected(self) -> None:
+        days = trading_days_ending(date(2026, 11, 5), 22)
+        rows = stock_rows(days)
+        rows.append(
+            {
+                "timestamp": "2026-11-05T16:00:00.000",
+                "open": 0,
+                "high": 525,
+                "low": 524,
+                "close": 524.5,
+                "volume": 100,
+                "count": 1,
+                "vwap": 524.5,
+            }
+        )
+        with self.assertRaisesRegex(
+            GeneratorError,
+            "stock open at 2026-11-05T16:00:00.000",
+        ):
+            build_report(
+                session="premarket",
+                trading_date=date(2026, 11, 6),
+                generated_at=datetime(2026, 11, 6, 13, 45, tzinfo=timezone.utc),
+                stock_rows=rows,
+            )
+
     def test_client_uses_documented_v3_endpoint_and_json_format(self) -> None:
         captured: list[str] = []
 
@@ -158,11 +208,27 @@ class GeneratorTests(unittest.TestCase):
 
         def opener(request, timeout):
             captured.append(request.full_url)
-            return FakeResponse({"response": [{"timestamp": "2026-11-05T15:00:00.000"}]})
+            return FakeResponse(
+                {
+                    "response": [
+                        {
+                            "timestamp": "2026-11-05T15:00:00.000",
+                            "open": 500,
+                            "high": 501,
+                            "low": 499,
+                            "close": 500.5,
+                            "volume": 100,
+                            "count": 10,
+                            "vwap": 500.2,
+                        }
+                    ]
+                }
+            )
 
         result = health_check(ThetaDataClient(opener=opener, retries=0))
         self.assertTrue(result["ok"])
         self.assertEqual(result["data_scope"], "SPY stock OHLC only")
+        self.assertEqual(result["usable_sessions"], 1)
         self.assertEqual(len(captured), 1)
         self.assertEqual(
             urllib.parse.urlsplit(captured[0]).path,
