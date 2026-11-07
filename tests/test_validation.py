@@ -33,6 +33,36 @@ class ValidationTests(unittest.TestCase):
             now=datetime(2026, 11, 6, 21, 35, tzinfo=timezone.utc),
         )
 
+    def test_valid_intraday_next_hour(self) -> None:
+        metadata = validate_report(
+            fixture("valid_intraday.json"),
+            expected_session="intraday",
+            now=datetime(2026, 11, 9, 15, 36, tzinfo=timezone.utc),
+        )
+        self.assertEqual(metadata.session, "intraday")
+
+    def test_intraday_rejects_probability_like_confidence(self) -> None:
+        report = deepcopy(fixture("valid_intraday.json"))
+        report["forecast"]["confidence"] = 0.80
+        with self.assertRaisesRegex(ValidationError, "signal_strength"):
+            validate_report(
+                report,
+                expected_session="intraday",
+                now=datetime(2026, 11, 9, 15, 36, tzinfo=timezone.utc),
+            )
+
+    def test_intraday_window_cannot_cross_close(self) -> None:
+        report = deepcopy(fixture("valid_intraday.json"))
+        report["generated_at"] = "2026-11-09T20:35:00Z"
+        report["forecast"]["window_start"] = "2026-11-09T15:35:00-05:00"
+        report["forecast"]["window_end"] = "2026-11-09T16:35:00-05:00"
+        with self.assertRaisesRegex(ValidationError, "end by the close"):
+            validate_report(
+                report,
+                expected_session="intraday",
+                now=datetime(2026, 11, 9, 20, 36, tzinfo=timezone.utc),
+            )
+
     def test_late_postmarket_requires_explicit_same_day_backfill(self) -> None:
         report = deepcopy(fixture("valid_postmarket.json"))
         report["generated_at"] = "2026-11-07T02:34:00Z"

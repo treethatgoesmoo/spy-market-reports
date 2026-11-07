@@ -24,6 +24,7 @@ KNOWN_HOSTS := $(CONFIG_DIR)/known_hosts
 SERVICE_FILE := /etc/systemd/system/spy-report-publisher@.service
 TIMERS := \
 	spy-report-publisher-premarket.timer \
+	spy-report-publisher-intraday.timer \
 	spy-report-publisher-postmarket-early.timer \
 	spy-report-publisher-postmarket-regular.timer
 GITHUB_ED25519_KEY := github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
@@ -140,6 +141,7 @@ install-systemd: check-user ## Install service/timer units without enabling them
 	  systemd/spy-report-publisher@.service \
 	  | $(SUDO) tee '$(SERVICE_FILE)' >/dev/null
 	$(SUDO) install -m 0644 systemd/spy-report-publisher-premarket.timer /etc/systemd/system/
+	$(SUDO) install -m 0644 systemd/spy-report-publisher-intraday.timer /etc/systemd/system/
 	$(SUDO) install -m 0644 systemd/spy-report-publisher-postmarket-early.timer /etc/systemd/system/
 	$(SUDO) install -m 0644 systemd/spy-report-publisher-postmarket-regular.timer /etc/systemd/system/
 	$(SUDO) systemctl daemon-reload
@@ -170,6 +172,7 @@ configure-generator: check-user ## Configure a generator using the documented co
 	  $(SUDO) sed \
 	    -e 's|^working_directory = .*|working_directory = $(GENERATOR_DIR)|' \
 	    -e 's|^premarket_command = .*|premarket_command = $(GENERATOR_PYTHON) $(GENERATOR_SCRIPT) --session {session} --trading-date {trading_date} --output {output}|' \
+	    -e 's|^intraday_command = .*|intraday_command = $(GENERATOR_PYTHON) $(GENERATOR_SCRIPT) --session {session} --trading-date {trading_date} --output {output}|' \
 	    -e 's|^postmarket_command = .*|postmarket_command = $(GENERATOR_PYTHON) $(GENERATOR_SCRIPT) --session {session} --trading-date {trading_date} --output {output}|' \
 	    '$(CONFIG_FILE)' >"$$tmp"; \
 	  $(SUDO) install -m 0640 -o '$(RUN_USER)' -g '$(RUN_GROUP)' "$$tmp" '$(CONFIG_FILE)'
@@ -212,8 +215,9 @@ clone-repo: check-user ## Clone or validate the dedicated publication checkout.
 check-thetadata: check-user verify-config ## Verify the local ThetaData v3 terminal and required data access.
 	$(SUDO) -u '$(RUN_USER)' $(PYTHON) '$(PREFIX)/thetadata_report_generator.py' --health-check
 
-check-schedule: check-user verify-config ## Evaluate both schedule gates without generating or publishing.
+check-schedule: check-user verify-config ## Evaluate all schedule gates without generating or publishing.
 	$(SUDO) -u '$(RUN_USER)' $(PYTHON) '$(PREFIX)/schedule_runner.py' --config '$(CONFIG_FILE)' --session premarket --check-schedule
+	$(SUDO) -u '$(RUN_USER)' $(PYTHON) '$(PREFIX)/schedule_runner.py' --config '$(CONFIG_FILE)' --session intraday --check-schedule
 	$(SUDO) -u '$(RUN_USER)' $(PYTHON) '$(PREFIX)/schedule_runner.py' --config '$(CONFIG_FILE)' --session postmarket --check-schedule
 
 enable-timers: install-systemd verify-config clone-repo ## Verify and enable all market-aware timers.
@@ -232,7 +236,7 @@ update: install-files install-systemd ## Update code and unit files while preser
 
 status: ## Show timer and recent service status.
 	@systemctl list-timers 'spy-report-publisher*' --no-pager || true
-	@systemctl --no-pager --full status 'spy-report-publisher@premarket.service' 'spy-report-publisher@postmarket.service' || true
+	@systemctl --no-pager --full status 'spy-report-publisher@premarket.service' 'spy-report-publisher@intraday.service' 'spy-report-publisher@postmarket.service' || true
 
 logs: ## Show today's publisher service logs.
 	$(SUDO) journalctl -u 'spy-report-publisher@*' --since today --no-pager

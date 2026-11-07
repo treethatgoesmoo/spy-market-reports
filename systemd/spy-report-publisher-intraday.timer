@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule hourly SPY intraday next-interval reports
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 10..15:35:00 America/New_York
+AccuracySec=15s
+Persistent=true
+Unit=spy-report-publisher@intraday.service
+
+[Install]
+WantedBy=timers.target

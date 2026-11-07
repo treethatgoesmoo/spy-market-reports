@@ -188,6 +188,38 @@ class GitPublishTests(unittest.TestCase):
                 push=self.can_test_local_push,
             )
 
+    def test_intraday_is_archived_and_updates_daily_latest(self) -> None:
+        report = self.copy_fixture("valid_intraday.json")
+        result = publish_report(
+            report,
+            "intraday",
+            self.config,
+            now=datetime(2026, 11, 9, 15, 36, tzinfo=timezone.utc),
+            push=self.can_test_local_push,
+        )
+        self.assertEqual(result.outcome, "published")
+        self.assertEqual(
+            result.report_path,
+            "reports/20261109/intraday-103500.json",
+        )
+        archive = self.repo / result.report_path
+        daily = self.repo / "reports" / "20261109.json"
+        latest = self.repo / "latest.json"
+        self.assertTrue(archive.is_file())
+        self.assertEqual(archive.read_bytes(), daily.read_bytes())
+        self.assertEqual(daily.read_bytes(), latest.read_bytes())
+
+        count_before = git(self.repo, "rev-list", "--count", "HEAD")
+        duplicate = publish_report(
+            report,
+            "intraday",
+            self.config,
+            now=datetime(2026, 11, 9, 15, 36, tzinfo=timezone.utc),
+            push=self.can_test_local_push,
+        )
+        self.assertEqual(duplicate.outcome, "duplicate")
+        self.assertEqual(count_before, git(self.repo, "rev-list", "--count", "HEAD"))
+
 
 if __name__ == "__main__":
     unittest.main()

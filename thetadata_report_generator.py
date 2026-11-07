@@ -31,7 +31,7 @@ from market_calendar import EASTERN, market_hours
 
 
 LOGGER = logging.getLogger("thetadata_report_generator")
-VERSION = "1.2.3"
+VERSION = "1.3.0"
 DEFAULT_BASE_URL = "http://127.0.0.1:25503/v3"
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 
@@ -55,6 +55,17 @@ class DailyBar:
     vwap: float
     bar_count: int
     last_timestamp: str
+
+
+@dataclass(frozen=True)
+class IntradayBar:
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    vwap: float
 
 
 def _validate_base_url(value: str, allow_remote: bool = False) -> str:
@@ -427,15 +438,295 @@ def _add_signal(
     return contribution
 
 
+def _interval_minutes(interval: str) -> int:
+    if not interval.endswith("m"):
+        raise GeneratorError("intraday reports require a minute-based interval")
+    try:
+        minutes = int(interval[:-1])
+    except ValueError as exc:
+        raise GeneratorError(f"invalid minute interval: {interval!r}") from exc
+    if minutes <= 0 or 60 % minutes != 0:
+        raise GeneratorError("intraday interval must divide evenly into 60 minutes")
+    return minutes
+
+
+def _completed_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    trading_date: date,
+    generated_at: datetime,
+    interval_minutes: int,
+) -> list[Mapping[str, Any]]:
+    generated_eastern = generated_at.astimezone(EASTERN)
+    interval = timedelta(minutes=interval_minutes)
+    completed: list[Mapping[str, Any]] = []
+    for row in rows:
+        timestamp = _stock_timestamp(row.get("timestamp"))
+        if timestamp.date() == trading_date and timestamp + interval > generated_eastern:
+            continue
+        completed.append(row)
+    return completed
+
+
+def _intraday_bars(
+    rows: Sequence[Mapping[str, Any]],
+    trading_date: date,
+) -> list[IntradayBar]:
+    result: list[IntradayBar] = []
+    for row in rows:
+        timestamp = _stock_timestamp(row.get("timestamp"))
+        if timestamp.date() != trading_date:
+            continue
+        hours = market_hours(trading_date)
+        if (
+            not hours.is_open
+            or hours.open_at is None
+            or hours.close_at is None
+            or not (hours.open_at <= timestamp < hours.close_at)
+            or _is_empty_stock_bar(row)
+        ):
+            continue
+        open_price = _number(
+            row.get("open"), f"stock open at {row.get('timestamp')}", positive=True
+        )
+        high = _number(
+            row.get("high"), f"stock high at {row.get('timestamp')}", positive=True
+        )
+        low = _number(
+            row.get("low"), f"stock low at {row.get('timestamp')}", positive=True
+        )
+        close = _number(
+            row.get("close"), f"stock close at {row.get('timestamp')}", positive=True
+        )
+        if high < low:
+            raise GeneratorError(f"stock high is below low at {row.get('timestamp')}")
+        volume = max(0, int(_number(row.get("volume", 0), "stock volume")))
+        raw_vwap = row.get("vwap")
+        vwap = close if raw_vwap is None else _number(raw_vwap, "stock vwap", positive=True)
+        result.append(
+            IntradayBar(timestamp, open_price, high, low, close, volume, vwap)
+        )
+    return sorted(result, key=lambda bar: bar.timestamp)
+
+
+def _window_iso(value: datetime) -> str:
+    return value.isoformat(timespec="seconds")
+
+
+def build_intraday_report(
+    *,
+    trading_date: date,
+    generated_at: datetime,
+    stock_rows: Sequence[Mapping[str, Any]],
+    interval_minutes: int = 5,
+) -> dict[str, Any]:
+    if interval_minutes != 5:
+        raise GeneratorError("intraday reports currently require five-minute bars")
+    if generated_at.tzinfo is None or generated_at.utcoffset() is None:
+        raise GeneratorError("generated_at must be timezone-aware")
+    hours = market_hours(trading_date)
+    if not hours.is_open or hours.open_at is None or hours.close_at is None:
+        raise GeneratorError(f"{trading_date} is not a regular US equities trading day")
+    generated_eastern = generated_at.astimezone(EASTERN)
+    if generated_eastern.date() != trading_date:
+        raise GeneratorError("intraday generated_at must resolve to trading_date")
+    if not (hours.open_at + timedelta(minutes=60) <= generated_eastern < hours.close_at):
+        raise GeneratorError(
+            "intraday report must be generated at least 60 minutes after the open "
+            "and before the close"
+        )
+
+    completed = _completed_rows(
+        stock_rows,
+        trading_date=trading_date,
+        generated_at=generated_at,
+        interval_minutes=interval_minutes,
+    )
+    bars = _intraday_bars(completed, trading_date)
+    bars_per_hour = 60 // interval_minutes
+    if len(bars) < bars_per_hour:
+        raise GeneratorError(
+            f"need at least {bars_per_hour} completed intraday bars; received {len(bars)}"
+        )
+
+    last_bar_end = bars[-1].timestamp + timedelta(minutes=interval_minutes)
+    if generated_eastern - last_bar_end > timedelta(minutes=interval_minutes + 2):
+        raise GeneratorError(
+            f"latest completed bar ended at {last_bar_end.isoformat()}, too stale for "
+            f"an intraday report generated at {generated_eastern.isoformat()}"
+        )
+
+    daily = aggregate_stock_rows(completed)
+    if not daily or daily[-1].trading_date != trading_date:
+        raise GeneratorError(f"SPY intraday data does not reach {trading_date}")
+    current = daily[-1]
+    previous_close = daily[-2].close if len(daily) >= 2 else None
+    closes = [bar.close for bar in bars]
+    ema6 = _ema(closes, min(6, len(closes)))
+    ema12 = _ema(closes, min(12, len(closes)))
+    momentum15 = _momentum(closes, 3)
+    momentum30 = _momentum(closes, 6)
+    momentum60 = _momentum(closes, bars_per_hour)
+    total_volume = sum(bar.volume for bar in bars)
+    session_vwap = (
+        sum(bar.vwap * max(1, bar.volume) for bar in bars)
+        / sum(max(1, bar.volume) for bar in bars)
+    )
+    price_vs_vwap = _pct_change(bars[-1].close, session_vwap)
+    ema_spread = _pct_change(ema6, ema12)
+
+    signals: list[dict[str, Any]] = []
+    score = 0.0
+    contribution = 1.0 if ema_spread > 0.05 else -1.0 if ema_spread < -0.05 else 0.0
+    score += _add_signal(
+        signals,
+        "ema6_vs_ema12_5m",
+        ema_spread,
+        contribution,
+        "Short intraday trend using completed five-minute bars",
+    )
+    contribution = (
+        1.0
+        if momentum30 is not None and momentum30 > 0.15
+        else -1.0
+        if momentum30 is not None and momentum30 < -0.15
+        else 0.0
+    )
+    score += _add_signal(
+        signals,
+        "momentum_30m_pct",
+        momentum30,
+        contribution,
+        "Thirty-minute price momentum",
+    )
+    contribution = 0.75 if price_vs_vwap > 0.10 else -0.75 if price_vs_vwap < -0.10 else 0.0
+    score += _add_signal(
+        signals,
+        "price_vs_session_vwap_pct",
+        price_vs_vwap,
+        contribution,
+        "Last completed-bar close relative to Nasdaq Basic session VWAP",
+    )
+    contribution = (
+        0.5
+        if momentum15 is not None and momentum15 > 0.08
+        else -0.5
+        if momentum15 is not None and momentum15 < -0.08
+        else 0.0
+    )
+    score += _add_signal(
+        signals,
+        "momentum_15m_pct",
+        momentum15,
+        contribution,
+        "Fifteen-minute price momentum",
+    )
+
+    bias = "bullish" if score >= 1.25 else "bearish" if score <= -1.25 else "neutral"
+    signal_strength = min(1.0, abs(score) / 3.25)
+    window_start = last_bar_end
+    window_end = min(window_start + timedelta(hours=1), hours.close_at)
+    duration_minutes = int((window_end - window_start).total_seconds() // 60)
+    expected_bars = int((last_bar_end - hours.open_at).total_seconds() // 60) // interval_minutes
+    completeness = min(1.0, len(bars) / max(1, expected_bars))
+    if completeness < 0.80:
+        raise GeneratorError(
+            f"intraday bar completeness is only {completeness:.0%}; refusing to forecast"
+        )
+    rationale = [
+        f"{item['name']} contributed {item['contribution']:+g}"
+        for item in signals
+        if item["contribution"] != 0
+    ] or ["No configured short-horizon signal crossed its threshold"]
+
+    return {
+        "symbol": "SPY",
+        "status": "live",
+        "market_timezone": "America/New_York",
+        "session": "intraday",
+        "trading_date": trading_date.isoformat(),
+        "generated_at": generated_at.astimezone(timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "source": "thetadata-local-v3",
+        "source_venue": "nqb",
+        "data_through": trading_date.isoformat(),
+        "market": {
+            "as_of": _window_iso(last_bar_end),
+            "last_completed_bar_start": _window_iso(bars[-1].timestamp),
+            "reference_price": _rounded(bars[-1].close),
+            "session_open": _rounded(current.open),
+            "session_high": _rounded(current.high),
+            "session_low": _rounded(current.low),
+            "session_vwap": _rounded(session_vwap),
+            "session_volume_nasdaq_basic": total_volume,
+            "open_to_current_pct": _rounded(_pct_change(bars[-1].close, current.open)),
+            "previous_close_to_current_pct": (
+                _rounded(_pct_change(bars[-1].close, previous_close))
+                if previous_close is not None
+                else None
+            ),
+        },
+        "analysis": {
+            "method": "transparent-intraday-rule-score-v1",
+            "score": round(score, 2),
+            "maximum_absolute_score": 3.25,
+            "signals": signals,
+            "indicators": {
+                "ema6_5m": _rounded(ema6),
+                "ema12_5m": _rounded(ema12),
+                "momentum_15m_pct": _rounded(momentum15),
+                "momentum_30m_pct": _rounded(momentum30),
+                "momentum_60m_pct": _rounded(momentum60),
+                "price_vs_session_vwap_pct": _rounded(price_vs_vwap),
+            },
+        },
+        "forecast": {
+            "is_directional_forecast": True,
+            "bias": bias,
+            "signal_strength": round(signal_strength, 2),
+            "calibrated_probability": None,
+            "horizon": "next_market_interval",
+            "window_start": _window_iso(window_start),
+            "window_end": _window_iso(window_end),
+            "duration_minutes": duration_minutes,
+            "target": "window-end SPY price versus reference_price",
+            "reference_price": _rounded(bars[-1].close),
+            "rationale": rationale,
+        },
+        "data_quality": {
+            "feed": "Nasdaq Basic",
+            "coverage": "not consolidated UTP/CTA",
+            "completed_bars": len(bars),
+            "interval_minutes": interval_minutes,
+            "completeness": round(completeness, 2),
+            "inputs": ["SPY stock OHLC (Nasdaq Basic)"],
+        },
+        "generator": {"name": "thetadata_report_generator", "version": VERSION},
+        "disclaimer": (
+            "Uncalibrated rule-based signal strength for research; not a probability "
+            "or investment advice."
+        ),
+    }
+
+
 def build_report(
     *,
     session: str,
     trading_date: date,
     generated_at: datetime,
     stock_rows: Sequence[Mapping[str, Any]],
+    interval_minutes: int = 5,
 ) -> dict[str, Any]:
+    if session == "intraday":
+        return build_intraday_report(
+            trading_date=trading_date,
+            generated_at=generated_at,
+            stock_rows=stock_rows,
+            interval_minutes=interval_minutes,
+        )
     if session not in {"premarket", "postmarket"}:
-        raise GeneratorError("session must be premarket or postmarket")
+        raise GeneratorError("session must be premarket, intraday, or postmarket")
     if generated_at.tzinfo is None or generated_at.utcoffset() is None:
         raise GeneratorError("generated_at must be timezone-aware")
     expected_data_date = (
@@ -529,9 +820,6 @@ def build_report(
     bias = "bullish" if score >= 1.25 else "bearish" if score <= -1.25 else "neutral"
     data_completeness = min(1.0, len(stock) / 20.0)
     strength = min(1.0, abs(score) / 4.5)
-    confidence = min(0.90, (0.48 + 0.37 * strength) * data_completeness)
-    if bias == "neutral":
-        confidence = min(confidence, 0.62)
 
     rationale = [
         f"{item['name']} contributed {item['contribution']:+g}"
@@ -541,6 +829,33 @@ def build_report(
     if not rationale:
         rationale = ["No configured signal crossed its directional threshold"]
 
+    hours = market_hours(trading_date)
+    if hours.open_at is None or hours.close_at is None:
+        raise GeneratorError(f"market hours unavailable for {trading_date}")
+    if session == "premarket":
+        forecast = {
+            "is_directional_forecast": True,
+            "bias": bias,
+            "signal_strength": round(strength, 2),
+            "calibrated_probability": None,
+            "horizon": "first_regular_session_hour",
+            "window_start": _window_iso(hours.open_at),
+            "window_end": _window_iso(min(hours.open_at + timedelta(hours=1), hours.close_at)),
+            "target": "window-end SPY price versus regular-session open",
+            "rationale": rationale,
+        }
+    else:
+        forecast = {
+            "is_directional_forecast": False,
+            "bias": bias,
+            "signal_strength": round(strength, 2),
+            "calibrated_probability": None,
+            "horizon": "completed_session_trend_context",
+            "target": None,
+            "rationale": rationale,
+        }
+
+    previous_close = stock[-2].close if len(stock) >= 2 else None
     return {
         "symbol": "SPY",
         "status": "live",
@@ -551,6 +866,7 @@ def build_report(
         .isoformat()
         .replace("+00:00", "Z"),
         "source": "thetadata-local-v3",
+        "source_venue": "nqb",
         "data_through": expected_data_date.isoformat(),
         "market": {
             "as_of": latest.last_timestamp,
@@ -561,6 +877,11 @@ def build_report(
             "vwap": _rounded(latest.vwap),
             "volume": latest.volume,
             "intraday_return_pct": _rounded(session_return),
+            "previous_close_to_close_pct": (
+                _rounded(_pct_change(latest.close, previous_close))
+                if previous_close is not None
+                else None
+            ),
         },
         "analysis": {
             "method": "transparent-stock-rule-score-v1",
@@ -580,27 +901,23 @@ def build_report(
                 "volume_vs_20d_average": _rounded(volume_ratio),
             },
         },
-        "forecast": {
-            "bias": bias,
-            "confidence": round(confidence, 2),
-            "horizon": (
-                f"{trading_date.isoformat()} regular session"
-                if session == "premarket"
-                else "next regular session directional context"
-            ),
-            "rationale": rationale,
-        },
+        "forecast": forecast,
         "data_quality": {
             "spy_sessions": len(stock),
             "spy_bars_latest_session": latest.bar_count,
             "completeness": round(data_completeness, 2),
-            "inputs": ["SPY stock OHLC"],
+            "feed": "Nasdaq Basic",
+            "coverage": "not consolidated UTP/CTA",
+            "inputs": ["SPY stock OHLC (Nasdaq Basic)"],
         },
         "generator": {
             "name": "thetadata_report_generator",
             "version": VERSION,
         },
-        "disclaimer": "Rule-based market context for research; not investment advice.",
+        "disclaimer": (
+            "Uncalibrated rule-based signal strength for research; not a probability "
+            "or investment advice."
+        ),
     }
 
 
@@ -618,17 +935,21 @@ def generate_report(
         raise GeneratorError("lookback-calendar-days must be between 14 and 30")
     if not market_hours(trading_date).is_open:
         raise GeneratorError(f"{trading_date} is not a regular US equities trading day")
+    if session not in {"premarket", "intraday", "postmarket"}:
+        raise GeneratorError("session must be premarket, intraday, or postmarket")
     data_end = _previous_trading_day(trading_date) if session == "premarket" else trading_date
     data_start = data_end - timedelta(days=lookback_calendar_days - 1)
     LOGGER.info("requesting SPY data from %s through %s", data_start, data_end)
     stock_rows = client.stock_ohlc(
         "SPY", data_start, data_end, interval=interval, venue=venue
     )
+    generated = generated_at or datetime.now(timezone.utc)
     return build_report(
         session=session,
         trading_date=trading_date,
-        generated_at=generated_at or datetime.now(timezone.utc),
+        generated_at=generated,
         stock_rows=stock_rows,
+        interval_minutes=_interval_minutes(interval) if session == "intraday" else 5,
     )
 
 
@@ -680,7 +1001,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate a SPY analysis report from a local ThetaData v3 terminal"
     )
-    parser.add_argument("--session", choices=("premarket", "postmarket"))
+    parser.add_argument("--session", choices=("premarket", "intraday", "postmarket"))
     parser.add_argument("--trading-date", type=date.fromisoformat)
     parser.add_argument("--output", type=Path)
     parser.add_argument(

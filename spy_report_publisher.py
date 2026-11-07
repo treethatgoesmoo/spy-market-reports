@@ -30,7 +30,7 @@ from market_calendar import CalendarOverrides, EASTERN, load_overrides, market_h
 
 
 LOGGER = logging.getLogger("spy_report_publisher")
-SESSION_RANK = {"premarket": 0, "postmarket": 1}
+SESSION_RANK = {"premarket": 0, "intraday": 1, "postmarket": 2}
 TEST_VALUES = {
     "test",
     "testing",
@@ -230,7 +230,7 @@ def extract_metadata(report: Mapping[str, Any]) -> ReportMetadata:
 
     session = report.get("session")
     if session not in SESSION_RANK:
-        raise ValidationError("session must be 'premarket' or 'postmarket'")
+        raise ValidationError("session must be 'premarket', 'intraday', or 'postmarket'")
 
     trading_date_raw = report.get("trading_date")
     if not isinstance(trading_date_raw, str):
@@ -289,6 +289,56 @@ def validate_report(
             raise ValidationError(
                 "premarket generated_at must be between 04:00 ET and the 09:30 ET open"
             )
+    elif metadata.session == "intraday":
+        earliest = hours.open_at + timedelta(minutes=60)
+        if not (earliest <= generated_eastern < hours.close_at):
+            raise ValidationError(
+                "intraday generated_at must be at least 60 minutes after the open "
+                "and before the close"
+            )
+        forecast = report.get("forecast")
+        if not isinstance(forecast, dict):
+            raise ValidationError("intraday forecast must be an object")
+        if forecast.get("is_directional_forecast") is not True:
+            raise ValidationError("intraday forecast must be explicitly directional")
+        if forecast.get("horizon") != "next_market_interval":
+            raise ValidationError("intraday forecast horizon must be next_market_interval")
+        if "confidence" in forecast:
+            raise ValidationError(
+                "intraday forecast must use signal_strength, not uncalibrated confidence"
+            )
+        strength = forecast.get("signal_strength")
+        if (
+            isinstance(strength, bool)
+            or not isinstance(strength, (int, float))
+            or not 0 <= float(strength) <= 1
+        ):
+            raise ValidationError("intraday signal_strength must be between 0 and 1")
+        if forecast.get("calibrated_probability") is not None:
+            raise ValidationError(
+                "intraday calibrated_probability must be null until a calibrated model exists"
+            )
+        window_start = _parse_generated_at(forecast.get("window_start"))
+        window_end = _parse_generated_at(forecast.get("window_end"))
+        window_start_eastern = window_start.astimezone(EASTERN)
+        window_end_eastern = window_end.astimezone(EASTERN)
+        if abs(window_start - metadata.generated_at) > timedelta(minutes=5):
+            raise ValidationError(
+                "intraday forecast window_start must be within five minutes of generated_at"
+            )
+        if not (
+            window_start_eastern.date() == metadata.trading_date
+            and window_start_eastern < window_end_eastern <= hours.close_at
+            and window_end_eastern - window_start_eastern <= timedelta(hours=1)
+        ):
+            raise ValidationError(
+                "intraday forecast window must remain on trading_date, end by the close, "
+                "and be no longer than 60 minutes"
+            )
+        duration = forecast.get("duration_minutes")
+        actual_minutes = int((window_end - window_start).total_seconds() // 60)
+        if isinstance(duration, bool) or not isinstance(duration, int) or duration != actual_minutes:
+            raise ValidationError("intraday duration_minutes does not match its forecast window")
     else:
         earliest = hours.close_at + timedelta(
             minutes=max(0, 30 - postmarket_tolerance_minutes)
@@ -366,6 +416,19 @@ def _version_key(metadata: ReportMetadata) -> tuple[date, int, datetime]:
         SESSION_RANK[metadata.session],
         metadata.generated_at,
     )
+
+
+def _report_paths(metadata: ReportMetadata) -> tuple[Path, Optional[Path]]:
+    daily = Path("reports") / f"{metadata.trading_date:%Y%m%d}.json"
+    if metadata.session != "intraday":
+        return daily, None
+    generated_eastern = metadata.generated_at.astimezone(EASTERN)
+    archive = (
+        Path("reports")
+        / f"{metadata.trading_date:%Y%m%d}"
+        / f"intraday-{generated_eastern:%H%M%S}.json"
+    )
+    return daily, archive
 
 
 def _reject_regression(
@@ -609,7 +672,8 @@ def publish_report(
     )
     payload = canonical_json(report)
     digest = hashlib.sha256(payload).hexdigest()
-    relative_report = Path("reports") / f"{metadata.trading_date:%Y%m%d}.json"
+    relative_report, relative_archive = _report_paths(metadata)
+    result_path = relative_archive or relative_report
 
     repository = GitRepository(config)
     lock_path = config.repo_dir.resolve() / ".git" / "spy-report-publisher.lock"
@@ -620,16 +684,19 @@ def publish_report(
 
         report_path = repository.root / relative_report
         latest_path = repository.root / "latest.json"
+        archive_path = repository.root / relative_archive if relative_archive else None
         old_report = _safe_read(report_path)
         old_latest = _safe_read(latest_path)
+        old_archive = _safe_read(archive_path) if archive_path else None
 
         report_same = _semantically_equal(old_report, payload)
         latest_same = _semantically_equal(old_latest, payload)
-        if report_same and latest_same:
+        archive_same = archive_path is None or _semantically_equal(old_archive, payload)
+        if report_same and latest_same and archive_same:
             LOGGER.info("duplicate report; repository already contains sha256=%s", digest)
             return PublishResult(
                 "duplicate",
-                relative_report.as_posix(),
+                result_path.as_posix(),
                 None,
                 digest,
                 "identical report and latest.json already exist; no commit created",
@@ -639,6 +706,10 @@ def publish_report(
             _reject_regression(old_report, metadata, label=relative_report.as_posix())
         if not latest_same:
             _reject_regression(old_latest, metadata, label="latest.json")
+        if archive_path is not None and old_archive is not None and not archive_same:
+            raise ValidationError(
+                f"refusing to overwrite intraday archive collision: {relative_archive}"
+            )
 
         baseline = repository.head()
         wrote_files = False
@@ -648,17 +719,20 @@ def publish_report(
                 _atomic_write(report_path, payload)
             if not latest_same:
                 _atomic_write(latest_path, payload)
+            if archive_path is not None and not archive_same:
+                _atomic_write(archive_path, payload)
             wrote_files = True
 
-            repository.run(
-                ["add", "--", relative_report.as_posix(), "latest.json"]
-            )
+            commit_paths = [relative_report.as_posix(), "latest.json"]
+            if relative_archive is not None:
+                commit_paths.append(relative_archive.as_posix())
+            repository.run(["add", "--", *commit_paths])
             staged = repository.run(["diff", "--cached", "--quiet"], check=False)
             if staged.returncode == 0:
                 repository.run(["reset", "--hard", baseline])
                 return PublishResult(
                     "duplicate",
-                    relative_report.as_posix(),
+                    result_path.as_posix(),
                     None,
                     digest,
                     "canonical report produced no Git change; no commit created",
@@ -666,10 +740,16 @@ def publish_report(
             if staged.returncode != 1:
                 raise GitError("unable to inspect staged report changes")
 
-            message = (
-                f"Publish SPY {metadata.session} report for "
-                f"{metadata.trading_date.isoformat()}"
-            )
+            if metadata.session == "intraday":
+                message = (
+                    f"Publish SPY intraday report for {metadata.trading_date.isoformat()} "
+                    f"{metadata.generated_at.astimezone(EASTERN):%H:%M} ET"
+                )
+            else:
+                message = (
+                    f"Publish SPY {metadata.session} report for "
+                    f"{metadata.trading_date.isoformat()}"
+                )
             repository.run(
                 [
                     "commit",
@@ -677,8 +757,7 @@ def publish_report(
                     "-m",
                     message,
                     "--",
-                    relative_report.as_posix(),
-                    "latest.json",
+                    *commit_paths,
                 ],
                 extra_config=True,
             )
@@ -689,11 +768,11 @@ def publish_report(
                 # A push race may have rebased the publication and changed its SHA.
                 commit = repository.head()
             LOGGER.info(
-                "published %s (%s, sha256=%s)", relative_report, commit, digest
+                "published %s (%s, sha256=%s)", result_path, commit, digest
             )
             return PublishResult(
                 "published",
-                relative_report.as_posix(),
+                result_path.as_posix(),
                 commit,
                 digest,
                 "report committed and pushed" if push else "report committed locally",
@@ -736,9 +815,10 @@ def validate_file(
     )
     payload = canonical_json(report)
     digest = hashlib.sha256(payload).hexdigest()
+    relative_report, relative_archive = _report_paths(metadata)
     return PublishResult(
         "valid",
-        f"reports/{metadata.trading_date:%Y%m%d}.json",
+        (relative_archive or relative_report).as_posix(),
         None,
         digest,
         "validation passed; Git was not accessed",

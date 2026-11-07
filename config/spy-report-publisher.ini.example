@@ -19,6 +19,7 @@ working_directory = /opt/spy-report-publisher
 input_dir = /var/lib/spy-report-publisher/incoming
 timeout_seconds = 900
 premarket_command = /usr/bin/python3 /opt/spy-report-publisher/thetadata_report_generator.py --session {session} --trading-date {trading_date} --output {output}
+intraday_command = /usr/bin/python3 /opt/spy-report-publisher/thetadata_report_generator.py --session {session} --trading-date {trading_date} --output {output}
 postmarket_command = /usr/bin/python3 /opt/spy-report-publisher/thetadata_report_generator.py --session {session} --trading-date {trading_date} --output {output}
 
 [schedule]

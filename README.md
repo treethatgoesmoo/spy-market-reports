@@ -3,9 +3,10 @@
 This repository contains a standard-library-only Python pipeline that calls a locally
 running ThetaData v3 terminal, gathers SPY stock data, creates a transparent
 rule-based market report, validates it, writes `reports/YYYYMMDD.json`, updates
-`latest.json`, commits the two paths on `main`, and pushes them to this repository.
+`latest.json`, commits the paths on `main`, and pushes them to this repository.
+Intraday runs also archive immutable hourly signals below `reports/YYYYMMDD/`.
 
-Package version: **1.2.3**.
+Package version: **1.3.0**.
 
 The publisher is intentionally fail-closed. Validation finishes before it accesses
 Git. A bad report cannot replace `latest.json`.
@@ -18,12 +19,15 @@ Git. A bad report cannot replace `latest.json`.
   as `No live market data` are rejected at any nesting level.
 - The scheduled session must match the report's `session`.
 - `generated_at`, interpreted in `America/New_York`, must resolve to the labeled
-  trading date and must fall in the correct premarket or postmarket window.
+  trading date and must fall in the correct premarket, intraday, or postmarket window.
 - Weekends, standard NYSE holidays, and recurring 13:00 ET closes are handled. A
   small override file covers one-off exchange changes announced after deployment.
 - Future and stale reports are rejected. The default maximum age is 120 minutes.
-- A postmarket report can advance a same-day premarket report. A premarket report
-  cannot replace a postmarket report, and an older report cannot replace a newer one.
+- Session ordering is premarket, intraday, then postmarket. An older or lower-ranked
+  same-day report cannot replace a newer report.
+- Intraday forecasts require an explicit window of no more than 60 minutes ending by
+  the market close. They use `signal_strength`; probability-like `confidence` is
+  rejected until a model has actually been calibrated.
 - Canonically identical content is a successful no-op, so retries do not create
   duplicate commits.
 - The checkout must be clean and on `main`. Only the report path and `latest.json`
@@ -33,9 +37,10 @@ Git. A bad report cannot replace `latest.json`.
 - Push races are fetched and rebased up to two times. A failure rolls the dedicated,
   initially clean checkout back instead of leaving a half-published report.
 
-Because the requested archive path has no session suffix, the postmarket publication
-replaces that day's premarket file. The premarket version remains available in Git
-history; `latest.json` contains the newest session.
+`reports/YYYYMMDD.json` and `latest.json` always contain the newest accepted report.
+Each intraday report is additionally archived as
+`reports/YYYYMMDD/intraday-HHMMSS.json`; premarket and postmarket transitions remain
+available in Git history.
 
 ## Included ThetaData analysis generator
 
@@ -46,16 +51,26 @@ is required. It connects to Theta Terminal v3 at
 - 5-minute SPY bars from `/stock/history/ohlc`;
 - up to 30 calendar days of regular-session history.
 
-It calculates moving averages, EMA trend, RSI, ATR, realized volatility, price and
-volume momentum. Every contribution to the final bullish/neutral/bearish score is
-stored in `analysis.signals`; the result is an explainable rule-based research
-summary, not a trained model or investment advice.
+Premarket and postmarket reports calculate daily moving averages, EMA trend, RSI,
+ATR, realized volatility, and momentum. Intraday reports use only completed
+five-minute bars and combine short EMA spread, 15/30-minute momentum, and distance
+from session VWAP. Every contribution is stored in `analysis.signals`.
+
+`forecast.signal_strength` is the normalized magnitude of a transparent rule score;
+it is deliberately **not** labeled confidence and is not a win probability. Premarket
+reports target the first regular-session hour. Intraday reports contain exact
+`window_start`, `window_end`, `duration_minutes`, and `reference_price` fields.
+Postmarket reports are completed-session trend summaries, not next-session forecasts.
 
 Theta Terminal must already be running on the same Pi, and the ThetaData account must
 have access to stock OHLC history. The generator refuses non-loopback ThetaData URLs
 by default and rejects malformed, incomplete, or stale SPY responses. It does not
 request index data; ThetaData STANDARD stock access with FREE index access is the
 intended subscription combination.
+
+The live current-day venue is `nqb` (Nasdaq Basic), which is not consolidated UTP/CTA.
+Reports state that limitation and keep Nasdaq Basic volume separate from consolidated
+market volume. Small differences from an official consolidated close are expected.
 
 ThetaData can include a synthetic row at the inclusive market-close boundary (16:00
 on regular days or 13:00 on early-close days). Because a regular-session bar must
@@ -79,7 +94,7 @@ The included generator writes one JSON object with at least these fields:
 }
 ```
 
-`session` is `premarket` or `postmarket`. `generated_at` must have `Z` or an explicit
+`session` is `premarket`, `intraday`, or `postmarket`. `generated_at` must have `Z` or an explicit
 UTC offset. Additional analysis fields are preserved. The scheduler supplies these
 environment variables to the generator as well as the configured command arguments:
 
@@ -117,7 +132,7 @@ performed.
 - `market_calendar.py` — dependency-free US equities session calendar
 - `schedule_runner.py` — holiday/early-close gate and generator integration
 - `config/` — publisher configuration and emergency calendar overrides
-- `systemd/` — one service template and three market-time timers
+- `systemd/` — one service template and four market-time timers
 - `fixtures/` and `tests/` — accepted/rejected examples plus unit/integration tests
 
 ## Exact Raspberry Pi installation commands
@@ -288,26 +303,32 @@ sed \
   systemd/spy-report-publisher@.service \
   | sudo tee /etc/systemd/system/spy-report-publisher@.service >/dev/null
 sudo install -m 0644 systemd/spy-report-publisher-premarket.timer /etc/systemd/system/
+sudo install -m 0644 systemd/spy-report-publisher-intraday.timer /etc/systemd/system/
 sudo install -m 0644 systemd/spy-report-publisher-postmarket-early.timer /etc/systemd/system/
 sudo install -m 0644 systemd/spy-report-publisher-postmarket-regular.timer /etc/systemd/system/
 
 sudo systemd-analyze verify \
   /etc/systemd/system/spy-report-publisher@.service \
   /etc/systemd/system/spy-report-publisher-premarket.timer \
+  /etc/systemd/system/spy-report-publisher-intraday.timer \
   /etc/systemd/system/spy-report-publisher-postmarket-early.timer \
   /etc/systemd/system/spy-report-publisher-postmarket-regular.timer
 sudo systemctl daemon-reload
 sudo systemctl enable --now \
   spy-report-publisher-premarket.timer \
+  spy-report-publisher-intraday.timer \
   spy-report-publisher-postmarket-early.timer \
   spy-report-publisher-postmarket-regular.timer
 systemctl list-timers 'spy-report-publisher*'
 ```
 
-The premarket timer fires at 08:45 ET. The two postmarket timers fire at 13:30 and
-16:30 ET; the calendar gate allows only the one that is 30 minutes after that day's
-actual scheduled close. On holidays, both sessions skip successfully. `OnCalendar`
-uses `America/New_York`, so daylight-saving changes do not require UTC cron edits.
+The premarket timer fires at 08:45 ET. Intraday runs fire at 10:35, 11:35, 12:35,
+13:35, 14:35, and 15:35 ET. The first five-minute-bar hour is therefore complete;
+the last forecast is capped at 16:00. On a 13:00 early close, only the 10:35, 11:35,
+and 12:35 slots pass the market-aware gate, and the last window is capped at 13:00.
+The postmarket timers fire at 13:30 and 16:30 ET; only the one 30 minutes after the
+actual close passes. Holidays skip every session. `OnCalendar` uses
+`America/New_York`, so daylight-saving changes do not require UTC cron edits.
 
 If the generator needs to write anywhere besides the report output directory, add
 that exact directory to `ReadWritePaths=` in the service. Keep the list narrow.
@@ -324,7 +345,7 @@ python3 -m py_compile market_calendar.py spy_report_publisher.py schedule_runner
 The test suite uses temporary local Git repositories; it never contacts or modifies
 GitHub. It covers regular and early-close sessions, holidays, test-data rejection,
 the reported 05:17 UTC/date mismatch pattern, duplicate suppression, transactional
-commits, and premarket-to-postmarket advancement. On Linux (including Raspberry Pi),
+commits, intraday archive publication, and session advancement. On Linux (including Raspberry Pi),
 the integration test also pushes to a temporary local bare remote; Windows runs the
 same transaction without the local transport because some Git for Windows sandboxed
 installations cannot launch the file-transport helper. Generator tests use deterministic
@@ -342,6 +363,10 @@ Check the schedule gate without running the generator:
 /usr/bin/python3 /opt/spy-report-publisher/schedule_runner.py \
   --config /etc/spy-report-publisher/publisher.ini \
   --session premarket \
+  --check-schedule
+/usr/bin/python3 /opt/spy-report-publisher/schedule_runner.py \
+  --config /etc/spy-report-publisher/publisher.ini \
+  --session intraday \
   --check-schedule
 /usr/bin/python3 /opt/spy-report-publisher/schedule_runner.py \
   --config /etc/spy-report-publisher/publisher.ini \
@@ -373,6 +398,7 @@ schedule gate as the timer. It will skip outside the due window:
 ```bash
 sudo systemctl start spy-report-publisher@premarket.service
 sudo journalctl -u spy-report-publisher@premarket.service -n 100 --no-pager
+sudo journalctl -u spy-report-publisher@intraday.service -n 100 --no-pager
 sudo journalctl -u spy-report-publisher@postmarket.service -n 100 --no-pager
 ```
 

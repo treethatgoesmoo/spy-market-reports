@@ -1,0 +1,33 @@
+{
+  "symbol": "SPY",
+  "status": "live",
+  "market_timezone": "America/New_York",
+  "session": "intraday",
+  "trading_date": "2026-11-09",
+  "generated_at": "2026-11-09T15:35:00Z",
+  "source": "thetadata-local-v3",
+  "source_venue": "nqb",
+  "market": {
+    "as_of": "2026-11-09T10:35:00-05:00",
+    "reference_price": 739.5
+  },
+  "forecast": {
+    "is_directional_forecast": true,
+    "bias": "neutral",
+    "signal_strength": 0.31,
+    "calibrated_probability": null,
+    "horizon": "next_market_interval",
+    "window_start": "2026-11-09T10:35:00-05:00",
+    "window_end": "2026-11-09T11:35:00-05:00",
+    "duration_minutes": 60,
+    "target": "window-end SPY price versus reference_price",
+    "reference_price": 739.5,
+    "rationale": [
+      "No configured short-horizon signal crossed its threshold"
+    ]
+  },
+  "data_quality": {
+    "feed": "Nasdaq Basic",
+    "coverage": "not consolidated UTP/CTA"
+  }
+}

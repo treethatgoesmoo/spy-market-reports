@@ -46,6 +46,14 @@ class MakefileTests(unittest.TestCase):
         self.assertIsNotNone(bootstrap)
         self.assertNotIn("enable-timers", bootstrap.group(1))
 
+    def test_intraday_timer_is_installed_and_managed(self) -> None:
+        self.assertIn("spy-report-publisher-intraday.timer", self.text)
+        timer = ROOT / "systemd" / "spy-report-publisher-intraday.timer"
+        self.assertTrue(timer.is_file())
+        timer_text = timer.read_text(encoding="utf-8")
+        self.assertIn("10..15:35:00 America/New_York", timer_text)
+        self.assertIn("spy-report-publisher@intraday.service", timer_text)
+
 
 if __name__ == "__main__":
     unittest.main()

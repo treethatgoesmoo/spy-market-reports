@@ -62,6 +62,27 @@ def stock_rows(days: list[date]) -> list[dict]:
     return rows
 
 
+def intraday_rows(day: date) -> list[dict]:
+    rows: list[dict] = []
+    start = datetime.combine(day, datetime.min.time()).replace(hour=9, minute=30)
+    for index in range(13):
+        timestamp = start + timedelta(minutes=5 * index)
+        base = 739.0 + index * 0.08
+        rows.append(
+            {
+                "timestamp": timestamp.isoformat(timespec="milliseconds"),
+                "open": base,
+                "high": base + 0.18,
+                "low": base - 0.10,
+                "close": base + 0.10,
+                "volume": 100_000 + index * 1_000,
+                "count": 100,
+                "vwap": base + 0.06,
+            }
+        )
+    return rows
+
+
 class FakeResponse:
     def __init__(self, payload: object) -> None:
         self.payload = json.dumps(payload).encode("utf-8")
@@ -90,7 +111,12 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(report["status"], "live")
         self.assertEqual(report["data_through"], "2026-11-05")
         self.assertEqual(report["forecast"]["bias"], "bullish")
-        self.assertEqual(report["data_quality"]["inputs"], ["SPY stock OHLC"])
+        self.assertEqual(
+            report["data_quality"]["inputs"],
+            ["SPY stock OHLC (Nasdaq Basic)"],
+        )
+        self.assertIn("signal_strength", report["forecast"])
+        self.assertNotIn("confidence", report["forecast"])
         self.assertNotIn("indices", report)
         self.assertFalse(
             any(
@@ -118,6 +144,56 @@ class GeneratorTests(unittest.TestCase):
             report,
             expected_session="postmarket",
             now=generated + timedelta(minutes=1),
+        )
+
+    def test_builds_publishable_intraday_next_hour_report(self) -> None:
+        trading_date = date(2026, 11, 9)
+        prior_days = trading_days_ending(date(2026, 11, 6), 21)
+        generated = datetime(2026, 11, 9, 15, 35, 20, tzinfo=timezone.utc)
+        report = build_report(
+            session="intraday",
+            trading_date=trading_date,
+            generated_at=generated,
+            stock_rows=stock_rows(prior_days) + intraday_rows(trading_date),
+        )
+        self.assertEqual(report["session"], "intraday")
+        self.assertEqual(report["forecast"]["horizon"], "next_market_interval")
+        self.assertEqual(report["forecast"]["duration_minutes"], 60)
+        self.assertIn("signal_strength", report["forecast"])
+        self.assertNotIn("confidence", report["forecast"])
+        self.assertIsNone(report["forecast"]["calibrated_probability"])
+        self.assertEqual(report["data_quality"]["feed"], "Nasdaq Basic")
+        validate_report(
+            report,
+            expected_session="intraday",
+            now=generated + timedelta(minutes=1),
+        )
+
+    def test_intraday_ignores_incomplete_future_bar(self) -> None:
+        trading_date = date(2026, 11, 9)
+        prior_days = trading_days_ending(date(2026, 11, 6), 21)
+        rows = stock_rows(prior_days) + intraday_rows(trading_date)
+        rows.append(
+            {
+                "timestamp": "2026-11-09T10:35:00.000",
+                "open": 0,
+                "high": 742,
+                "low": 741,
+                "close": 741.5,
+                "volume": 1,
+                "count": 1,
+                "vwap": 741.5,
+            }
+        )
+        report = build_report(
+            session="intraday",
+            trading_date=trading_date,
+            generated_at=datetime(2026, 11, 9, 15, 35, 20, tzinfo=timezone.utc),
+            stock_rows=rows,
+        )
+        self.assertEqual(
+            report["market"]["last_completed_bar_start"],
+            "2026-11-09T10:30:00-05:00",
         )
 
     def test_all_zero_no_trade_placeholder_bar_is_ignored(self) -> None:

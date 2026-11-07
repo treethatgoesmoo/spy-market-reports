@@ -114,10 +114,17 @@ def load_config(path: Path) -> RunnerConfig:
     if not publisher.expected_repository:
         raise ConfigurationError("expected_repository may not be empty")
 
+    premarket_command = _required(parser, "generator", "premarket_command")
+    postmarket_command = _required(parser, "generator", "postmarket_command")
     commands = {
-        "premarket": _required(parser, "generator", "premarket_command"),
-        "postmarket": _required(parser, "generator", "postmarket_command"),
+        "premarket": premarket_command,
+        "intraday": parser.get(
+            "generator", "intraday_command", fallback=postmarket_command
+        ).strip(),
+        "postmarket": postmarket_command,
     }
+    if not commands["intraday"]:
+        raise ConfigurationError("empty [generator] intraday_command")
     timeout = parser.getint("generator", "timeout_seconds", fallback=900)
     tolerance = parser.getint("schedule", "due_tolerance_minutes", fallback=20)
     if timeout <= 0 or tolerance < 0:
@@ -151,9 +158,28 @@ def due_time(
         return None
     if session == "premarket":
         return datetime.combine(trading_date, config.premarket_time, tzinfo=EASTERN)
+    if session == "intraday":
+        if hours.open_at is None:
+            return None
+        return hours.open_at + timedelta(minutes=65)
     if session == "postmarket":
         return hours.close_at + timedelta(minutes=30)
     raise ConfigurationError(f"unsupported session: {session!r}")
+
+
+def intraday_due_times(
+    trading_date: date,
+    overrides: CalendarOverrides,
+) -> list[datetime]:
+    hours = market_hours(trading_date, overrides)
+    if not hours.is_open or hours.open_at is None or hours.close_at is None:
+        return []
+    result: list[datetime] = []
+    cursor = hours.open_at + timedelta(minutes=65)
+    while cursor < hours.close_at:
+        result.append(cursor)
+        cursor += timedelta(hours=1)
+    return result
 
 
 def should_run(
@@ -168,6 +194,29 @@ def should_run(
     now_eastern = now_utc.astimezone(EASTERN)
     trading_date = now_eastern.date()
     overrides = load_overrides(config.publisher.overrides_file)
+    if session == "intraday":
+        slots = intraday_due_times(trading_date, overrides)
+        if not slots:
+            hours = market_hours(trading_date, overrides)
+            return False, f"{trading_date} is not open ({hours.reason})", trading_date
+        eligible = [slot for slot in slots if slot <= now_eastern + timedelta(minutes=2)]
+        if not eligible:
+            return (
+                False,
+                f"intraday is not due until {slots[0].isoformat()}",
+                trading_date,
+            )
+        due = eligible[-1]
+        delta = now_eastern - due
+        if delta > timedelta(minutes=config.due_tolerance_minutes):
+            return (
+                False,
+                f"intraday due window ended at "
+                f"{(due + timedelta(minutes=config.due_tolerance_minutes)).isoformat()}",
+                trading_date,
+            )
+        return True, f"intraday due at {due.isoformat()}", trading_date
+
     due = due_time(session, trading_date, config, overrides)
     if due is None:
         hours = market_hours(trading_date, overrides)
@@ -313,7 +362,9 @@ def _parser() -> argparse.ArgumentParser:
         description="Run the configured report generator only when the market schedule is due"
     )
     parser.add_argument("--config", required=True, type=Path)
-    parser.add_argument("--session", required=True, choices=("premarket", "postmarket"))
+    parser.add_argument(
+        "--session", required=True, choices=("premarket", "intraday", "postmarket")
+    )
     parser.add_argument("--check-schedule", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     return parser
