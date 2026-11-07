@@ -5,7 +5,7 @@ running ThetaData v3 terminal, gathers SPY stock data, creates a transparent
 rule-based market report, validates it, writes `reports/YYYYMMDD.json`, updates
 `latest.json`, commits the two paths on `main`, and pushes them to this repository.
 
-Package version: **1.2.2**.
+Package version: **1.2.3**.
 
 The publisher is intentionally fail-closed. Validation finishes before it accesses
 Git. A bad report cannot replace `latest.json`.
@@ -359,6 +359,13 @@ Validate a newly generated report without touching Git:
   --calendar-overrides /etc/spy-report-publisher/calendar-overrides.json \
   --validate-only
 ```
+
+Normal postmarket runs must be generated no later than 20:00 ET. For an intentional
+same-day manual recovery after that cutoff, add
+`--allow-same-day-postmarket-backfill` to both the validation and publication
+commands. The exception remains fail-closed: the report must be fresh, post-close,
+and its Eastern date must still equal `trading_date`. Scheduled services never set
+this flag.
 
 After the ThetaData health check passes, a manual service run exercises the same
 schedule gate as the timer. It will skip outside the due window:

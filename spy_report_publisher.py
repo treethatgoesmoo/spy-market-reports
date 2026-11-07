@@ -100,6 +100,7 @@ class PublisherConfig:
     max_age_minutes: int = 120
     clock_skew_minutes: int = 5
     postmarket_tolerance_minutes: int = 5
+    allow_same_day_postmarket_backfill: bool = False
     overrides_file: Optional[Path] = None
     git_author_name: str = "SPY Report Publisher"
     git_author_email: str = "spy-report-publisher@localhost"
@@ -254,6 +255,7 @@ def validate_report(
     max_age_minutes: int = 120,
     clock_skew_minutes: int = 5,
     postmarket_tolerance_minutes: int = 5,
+    allow_same_day_postmarket_backfill: bool = False,
 ) -> ReportMetadata:
     if expected_session not in SESSION_RANK:
         raise ValidationError(f"unsupported expected session: {expected_session!r}")
@@ -291,11 +293,17 @@ def validate_report(
         earliest = hours.close_at + timedelta(
             minutes=max(0, 30 - postmarket_tolerance_minutes)
         )
-        latest = datetime.combine(metadata.trading_date, time(20, 0), tzinfo=EASTERN)
+        latest_time = time.max if allow_same_day_postmarket_backfill else time(20, 0)
+        latest = datetime.combine(metadata.trading_date, latest_time, tzinfo=EASTERN)
         if not (earliest <= generated_eastern <= latest):
+            latest_label = (
+                "the end of the labeled trading date"
+                if allow_same_day_postmarket_backfill
+                else "20:00 ET"
+            )
             raise ValidationError(
                 "postmarket generated_at must be at least approximately 30 minutes after "
-                f"the {hours.close_at:%H:%M} ET close and no later than 20:00 ET"
+                f"the {hours.close_at:%H:%M} ET close and no later than {latest_label}"
             )
 
     if now is not None and (now.tzinfo is None or now.utcoffset() is None):
@@ -597,6 +605,7 @@ def publish_report(
         max_age_minutes=config.max_age_minutes,
         clock_skew_minutes=config.clock_skew_minutes,
         postmarket_tolerance_minutes=config.postmarket_tolerance_minutes,
+        allow_same_day_postmarket_backfill=config.allow_same_day_postmarket_backfill,
     )
     payload = canonical_json(report)
     digest = hashlib.sha256(payload).hexdigest()
@@ -723,6 +732,7 @@ def validate_file(
         max_age_minutes=config.max_age_minutes,
         clock_skew_minutes=config.clock_skew_minutes,
         postmarket_tolerance_minutes=config.postmarket_tolerance_minutes,
+        allow_same_day_postmarket_backfill=config.allow_same_day_postmarket_backfill,
     )
     payload = canonical_json(report)
     digest = hashlib.sha256(payload).hexdigest()
@@ -752,6 +762,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--remote", default="origin")
     parser.add_argument("--branch", default="main")
     parser.add_argument("--max-age-minutes", type=int, default=120)
+    parser.add_argument(
+        "--allow-same-day-postmarket-backfill",
+        action="store_true",
+        help=(
+            "allow a fresh postmarket report after 20:00 ET, but never after the "
+            "labeled trading date ends; intended only for manual recovery"
+        ),
+    )
     parser.add_argument("--calendar-overrides", type=Path)
     parser.add_argument("--git-author-name", default="SPY Report Publisher")
     parser.add_argument(
@@ -772,6 +790,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         remote=args.remote,
         branch=args.branch,
         max_age_minutes=args.max_age_minutes,
+        allow_same_day_postmarket_backfill=args.allow_same_day_postmarket_backfill,
         overrides_file=args.calendar_overrides,
         git_author_name=args.git_author_name,
         git_author_email=args.git_author_email,

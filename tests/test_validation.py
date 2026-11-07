@@ -33,6 +33,35 @@ class ValidationTests(unittest.TestCase):
             now=datetime(2026, 11, 6, 21, 35, tzinfo=timezone.utc),
         )
 
+    def test_late_postmarket_requires_explicit_same_day_backfill(self) -> None:
+        report = deepcopy(fixture("valid_postmarket.json"))
+        report["generated_at"] = "2026-11-07T02:34:00Z"
+        now = datetime(2026, 11, 7, 2, 35, tzinfo=timezone.utc)
+        with self.assertRaisesRegex(ValidationError, "no later than 20:00 ET"):
+            validate_report(
+                report,
+                expected_session="postmarket",
+                now=now,
+            )
+        metadata = validate_report(
+            report,
+            expected_session="postmarket",
+            now=now,
+            allow_same_day_postmarket_backfill=True,
+        )
+        self.assertEqual(metadata.session, "postmarket")
+
+    def test_same_day_backfill_does_not_allow_next_day_label_mismatch(self) -> None:
+        report = deepcopy(fixture("valid_postmarket.json"))
+        report["generated_at"] = "2026-11-07T05:01:00Z"
+        with self.assertRaisesRegex(ValidationError, "not trading_date"):
+            validate_report(
+                report,
+                expected_session="postmarket",
+                now=datetime(2026, 11, 7, 5, 2, tzinfo=timezone.utc),
+                allow_same_day_postmarket_backfill=True,
+            )
+
     def test_valid_early_close_postmarket(self) -> None:
         validate_report(
             fixture("valid_early_close_postmarket.json"),
