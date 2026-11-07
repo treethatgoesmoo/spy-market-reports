@@ -144,7 +144,7 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(report["market"]["as_of"], "2026-11-05T15:55:00.000")
         self.assertEqual(report["data_quality"]["spy_bars_latest_session"], 2)
 
-    def test_partial_zero_price_bar_is_rejected(self) -> None:
+    def test_market_close_boundary_bar_is_ignored_even_if_mixed(self) -> None:
         days = trading_days_ending(date(2026, 11, 5), 22)
         rows = stock_rows(days)
         rows.append(
@@ -159,9 +159,32 @@ class GeneratorTests(unittest.TestCase):
                 "vwap": 524.5,
             }
         )
+        report = build_report(
+            session="premarket",
+            trading_date=date(2026, 11, 6),
+            generated_at=datetime(2026, 11, 6, 13, 45, tzinfo=timezone.utc),
+            stock_rows=rows,
+        )
+        self.assertEqual(report["market"]["as_of"], "2026-11-05T15:55:00.000")
+
+    def test_partial_zero_price_bar_during_session_is_rejected(self) -> None:
+        days = trading_days_ending(date(2026, 11, 5), 22)
+        rows = stock_rows(days)
+        rows.append(
+            {
+                "timestamp": "2026-11-05T15:55:00.000",
+                "open": 0,
+                "high": 525,
+                "low": 524,
+                "close": 524.5,
+                "volume": 100,
+                "count": 1,
+                "vwap": 524.5,
+            }
+        )
         with self.assertRaisesRegex(
             GeneratorError,
-            "stock open at 2026-11-05T16:00:00.000",
+            "stock open at 2026-11-05T15:55:00.000",
         ):
             build_report(
                 session="premarket",
@@ -169,6 +192,45 @@ class GeneratorTests(unittest.TestCase):
                 generated_at=datetime(2026, 11, 6, 13, 45, tzinfo=timezone.utc),
                 stock_rows=rows,
             )
+
+    def test_early_close_boundary_bar_is_ignored(self) -> None:
+        days = trading_days_ending(date(2026, 11, 27), 22)
+        rows = [
+            row
+            for row in stock_rows(days)
+            if not row["timestamp"].startswith("2026-11-27T")
+        ]
+        rows.extend(
+            [
+                {
+                    "timestamp": "2026-11-27T12:55:00.000",
+                    "open": 524,
+                    "high": 525,
+                    "low": 523.5,
+                    "close": 524.5,
+                    "volume": 100,
+                    "count": 10,
+                    "vwap": 524.4,
+                },
+                {
+                    "timestamp": "2026-11-27T13:00:00.000",
+                    "open": 0,
+                    "high": 525,
+                    "low": 524,
+                    "close": 524.5,
+                    "volume": 1,
+                    "count": 1,
+                    "vwap": 524.5,
+                },
+            ]
+        )
+        report = build_report(
+            session="postmarket",
+            trading_date=date(2026, 11, 27),
+            generated_at=datetime(2026, 11, 27, 18, 35, tzinfo=timezone.utc),
+            stock_rows=rows,
+        )
+        self.assertEqual(report["market"]["as_of"], "2026-11-27T12:55:00.000")
 
     def test_client_uses_documented_v3_endpoint_and_json_format(self) -> None:
         captured: list[str] = []
@@ -202,6 +264,7 @@ class GeneratorTests(unittest.TestCase):
         query = urllib.parse.parse_qs(parsed.query)
         self.assertEqual(query["symbol"], ["SPY"])
         self.assertEqual(query["format"], ["json"])
+        self.assertEqual(query["end_time"], ["15:59:59.999"])
 
     def test_health_check_requests_only_spy_stock_data(self) -> None:
         captured: list[str] = []

@@ -31,7 +31,7 @@ from market_calendar import EASTERN, market_hours
 
 
 LOGGER = logging.getLogger("thetadata_report_generator")
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 DEFAULT_BASE_URL = "http://127.0.0.1:25503/v3"
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 
@@ -188,7 +188,10 @@ class ThetaDataClient:
                 "end_date": end_date.strftime("%Y%m%d"),
                 "interval": interval,
                 "start_time": "09:30:00.000",
-                "end_time": "16:00:00.000",
+                # ThetaData treats end_time as inclusive. 16:00 is the market-close
+                # boundary, not the start of a regular-session bar, and some feeds
+                # return a synthetic/mixed-value row at that timestamp.
+                "end_time": "15:59:59.999",
                 "venue": venue,
                 "format": "json",
             },
@@ -206,13 +209,16 @@ def _number(value: Any, label: str, *, positive: bool = False) -> float:
     return result
 
 
-def _timestamp_date(value: Any, label: str) -> date:
-    if not isinstance(value, str) or len(value) < 10:
-        raise GeneratorError(f"{label} timestamp is missing or invalid")
+def _stock_timestamp(value: Any) -> datetime:
+    if not isinstance(value, str):
+        raise GeneratorError("stock timestamp is missing or invalid")
     try:
-        return date.fromisoformat(value[:10])
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise GeneratorError(f"{label} timestamp is invalid: {value!r}") from exc
+        raise GeneratorError(f"stock timestamp is invalid: {value!r}") from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=EASTERN)
+    return parsed.astimezone(EASTERN)
 
 
 def _is_empty_stock_bar(row: Mapping[str, Any]) -> bool:
@@ -240,12 +246,28 @@ def _is_empty_stock_bar(row: Mapping[str, Any]) -> bool:
 def aggregate_stock_rows(rows: Sequence[Mapping[str, Any]]) -> list[DailyBar]:
     grouped: dict[date, list[Mapping[str, Any]]] = {}
     empty_bars = 0
+    outside_session_bars = 0
     for row in rows:
-        day = _timestamp_date(row.get("timestamp"), "stock")
+        timestamp = _stock_timestamp(row.get("timestamp"))
+        day = timestamp.date()
+        hours = market_hours(day)
+        if (
+            hours.is_open
+            and hours.open_at is not None
+            and hours.close_at is not None
+            and not (hours.open_at <= timestamp < hours.close_at)
+        ):
+            outside_session_bars += 1
+            continue
         if _is_empty_stock_bar(row):
             empty_bars += 1
             continue
         grouped.setdefault(day, []).append(row)
+    if outside_session_bars:
+        LOGGER.warning(
+            "ignored %d SPY bars outside regular market hours",
+            outside_session_bars,
+        )
     if empty_bars:
         LOGGER.warning("ignored %d all-zero no-trade SPY bars", empty_bars)
     daily: list[DailyBar] = []

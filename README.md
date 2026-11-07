@@ -5,7 +5,7 @@ running ThetaData v3 terminal, gathers SPY stock data, creates a transparent
 rule-based market report, validates it, writes `reports/YYYYMMDD.json`, updates
 `latest.json`, commits the two paths on `main`, and pushes them to this repository.
 
-Package version: **1.2.1**.
+Package version: **1.2.2**.
 
 The publisher is intentionally fail-closed. Validation finishes before it accesses
 Git. A bad report cannot replace `latest.json`.
@@ -57,9 +57,11 @@ by default and rejects malformed, incomplete, or stale SPY responses. It does no
 request index data; ThetaData STANDARD stock access with FREE index access is the
 intended subscription combination.
 
-ThetaData can include all-zero, zero-volume, zero-trade placeholder intervals in an
-otherwise valid OHLC response. The generator ignores only those fully empty bars. A
-partially populated bar with any non-positive OHLC price remains a hard failure so
+ThetaData can include a synthetic row at the inclusive market-close boundary (16:00
+on regular days or 13:00 on early-close days). Because a regular-session bar must
+start before the close, the generator excludes rows outside `[market open, market
+close)`. It also ignores fully empty no-trade intervals. A partially populated bar
+with any non-positive OHLC price *during* the session remains a hard failure so
 corrupt market data cannot be published.
 
 ## Required report contract
