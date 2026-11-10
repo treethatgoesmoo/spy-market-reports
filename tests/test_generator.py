@@ -6,7 +6,9 @@ import unittest
 import urllib.parse
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
+import thetadata_report_generator as generator
 from market_calendar import market_hours
 from spy_report_publisher import validate_report
 from thetadata_report_generator import (
@@ -394,7 +396,40 @@ class GeneratorTests(unittest.TestCase):
             loaded = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(loaded["forecast"]["bias"], "bullish")
 
+    def test_main_logs_signal_strength_without_legacy_confidence(self) -> None:
+        days = trading_days_ending(date(2026, 11, 5), 22)
+        report = build_report(
+            session="postmarket",
+            trading_date=date(2026, 11, 5),
+            generated_at=datetime(2026, 11, 5, 22, 30, tzinfo=timezone.utc),
+            stock_rows=stock_rows(days),
+        )
+        test_temp_root = ROOT / ".test-tmp"
+        test_temp_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=test_temp_root) as temp:
+            output = Path(temp) / "report.json"
+            with patch.object(generator, "generate_report", return_value=report):
+                with self.assertLogs("thetadata_report_generator", level="INFO") as logs:
+                    result = generator.main(
+                        [
+                            "--session",
+                            "postmarket",
+                            "--trading-date",
+                            "2026-11-05",
+                            "--output",
+                            str(output),
+                            "--retries",
+                            "0",
+                        ]
+                    )
+
+            self.assertEqual(result, 0)
+            self.assertTrue(output.is_file())
+            self.assertTrue(any("signal_strength=" in line for line in logs.output))
+            self.assertFalse(any("confidence=" in line for line in logs.output))
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

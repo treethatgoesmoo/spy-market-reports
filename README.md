@@ -6,7 +6,7 @@ rule-based market report, validates it, writes `reports/YYYYMMDD.json`, updates
 `latest.json`, commits the paths on `main`, and pushes them to this repository.
 Intraday runs also archive immutable hourly signals below `reports/YYYYMMDD/`.
 
-Package version: **1.3.1**.
+Package version: **1.3.2**.
 
 The publisher is intentionally fail-closed. Validation finishes before it accesses
 Git. A bad report cannot replace `latest.json`.
@@ -471,4 +471,5 @@ sudo tail -n 200 /var/log/spy-report-publisher/publisher.log
 
 The hourly ChatGPT repository monitor is separate and should remain as-is; this
 package does not create another monitor.
+
 

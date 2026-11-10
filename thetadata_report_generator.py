@@ -31,7 +31,7 @@ from market_calendar import EASTERN, market_hours
 
 
 LOGGER = logging.getLogger("thetadata_report_generator")
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 DEFAULT_BASE_URL = "http://127.0.0.1:25503/v3"
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 
@@ -1058,12 +1058,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         write_report(args.output, report)
         LOGGER.info(
-            "wrote %s %s report to %s (bias=%s confidence=%s)",
+            "wrote %s %s report to %s (bias=%s signal_strength=%s)",
             args.trading_date,
             args.session,
             args.output,
             report["forecast"]["bias"],
-            report["forecast"]["confidence"],
+            report["forecast"]["signal_strength"],
         )
         return 0
     except GeneratorError as exc:
@@ -1076,4 +1076,5 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
