@@ -6,9 +6,22 @@
   "trading_date": "2026-11-06",
   "generated_at": "2026-11-06T21:30:00Z",
   "source": "raspberry-pi",
-  "forecast": {
+  "session_direction": {
     "bias": "bullish",
-    "confidence": 0.72
+    "basis": "previous_close_to_close",
+    "return_pct": 1.25,
+    "open_to_close_pct": 0.80
+  },
+  "trend_regime": {
+    "bias": "neutral",
+    "signal_strength": 0.20,
+    "score": 0.90
+  },
+  "forecast": {
+    "is_directional_forecast": false,
+    "calibrated_probability": null,
+    "horizon": "none",
+    "target": null
   }
 }
 

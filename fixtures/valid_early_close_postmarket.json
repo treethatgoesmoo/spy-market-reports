@@ -6,9 +6,22 @@
   "trading_date": "2026-11-27",
   "generated_at": "2026-11-27T18:30:00Z",
   "source": "raspberry-pi",
-  "forecast": {
+  "session_direction": {
     "bias": "neutral",
-    "confidence": 0.58
+    "basis": "previous_close_to_close",
+    "return_pct": 0.02,
+    "open_to_close_pct": -0.03
+  },
+  "trend_regime": {
+    "bias": "neutral",
+    "signal_strength": 0.10,
+    "score": 0.45
+  },
+  "forecast": {
+    "is_directional_forecast": false,
+    "calibrated_probability": null,
+    "horizon": "none",
+    "target": null
   }
 }
 

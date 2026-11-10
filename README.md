@@ -6,7 +6,7 @@ rule-based market report, validates it, writes `reports/YYYYMMDD.json`, updates
 `latest.json`, commits the paths on `main`, and pushes them to this repository.
 Intraday runs also archive immutable hourly signals below `reports/YYYYMMDD/`.
 
-Package version: **1.3.2**.
+Package version: **1.4.0**.
 
 The publisher is intentionally fail-closed. Validation finishes before it accesses
 Git. A bad report cannot replace `latest.json`.
@@ -60,7 +60,11 @@ from session VWAP. Every contribution is stored in `analysis.signals`.
 it is deliberately **not** labeled confidence and is not a win probability. Premarket
 reports target the first regular-session hour. Intraday reports contain exact
 `window_start`, `window_end`, `duration_minutes`, and `reference_price` fields.
-Postmarket reports are completed-session trend summaries, not next-session forecasts.
+Postmarket reports are completed-session summaries, not next-session forecasts. They
+lead with `session_direction`, based on the close-to-close return, and separately
+report the slower `trend_regime`. Their `forecast` is explicitly non-directional and
+contains neither `bias` nor `signal_strength`, preventing a bearish trailing regime
+from being mislabeled as a bearish day or a prediction for the next session.
 
 Theta Terminal must already be running on the same Pi, and the ThetaData account must
 have access to stock OHLC history. The generator refuses non-loopback ThetaData URLs

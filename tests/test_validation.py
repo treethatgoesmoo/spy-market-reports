@@ -33,6 +33,26 @@ class ValidationTests(unittest.TestCase):
             now=datetime(2026, 11, 6, 21, 35, tzinfo=timezone.utc),
         )
 
+    def test_postmarket_requires_separate_session_and_trend_semantics(self) -> None:
+        report = deepcopy(fixture("valid_postmarket.json"))
+        del report["session_direction"]
+        with self.assertRaisesRegex(ValidationError, "session_direction"):
+            validate_report(
+                report,
+                expected_session="postmarket",
+                now=datetime(2026, 11, 6, 21, 35, tzinfo=timezone.utc),
+            )
+
+    def test_postmarket_rejects_bias_disguised_as_forecast(self) -> None:
+        report = deepcopy(fixture("valid_postmarket.json"))
+        report["forecast"]["bias"] = "bearish"
+        with self.assertRaisesRegex(ValidationError, "must not contain bias"):
+            validate_report(
+                report,
+                expected_session="postmarket",
+                now=datetime(2026, 11, 6, 21, 35, tzinfo=timezone.utc),
+            )
+
     def test_valid_intraday_next_hour(self) -> None:
         metadata = validate_report(
             fixture("valid_intraday.json"),

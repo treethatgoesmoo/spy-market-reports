@@ -31,6 +31,7 @@ from market_calendar import CalendarOverrides, EASTERN, load_overrides, market_h
 
 LOGGER = logging.getLogger("spy_report_publisher")
 SESSION_RANK = {"premarket": 0, "intraday": 1, "postmarket": 2}
+DIRECTION_VALUES = {"bullish", "bearish", "neutral"}
 TEST_VALUES = {
     "test",
     "testing",
@@ -355,6 +356,54 @@ def validate_report(
                 "postmarket generated_at must be at least approximately 30 minutes after "
                 f"the {hours.close_at:%H:%M} ET close and no later than {latest_label}"
             )
+
+        session_direction = report.get("session_direction")
+        if not isinstance(session_direction, dict):
+            raise ValidationError("postmarket session_direction must be an object")
+        if session_direction.get("bias") not in DIRECTION_VALUES:
+            raise ValidationError(
+                "postmarket session_direction.bias must be bullish, bearish, or neutral"
+            )
+        if session_direction.get("basis") != "previous_close_to_close":
+            raise ValidationError(
+                "postmarket session_direction.basis must be previous_close_to_close"
+            )
+        session_return = session_direction.get("return_pct")
+        if isinstance(session_return, bool) or not isinstance(
+            session_return, (int, float)
+        ):
+            raise ValidationError("postmarket session_direction.return_pct must be numeric")
+
+        trend_regime = report.get("trend_regime")
+        if not isinstance(trend_regime, dict):
+            raise ValidationError("postmarket trend_regime must be an object")
+        if trend_regime.get("bias") not in DIRECTION_VALUES:
+            raise ValidationError(
+                "postmarket trend_regime.bias must be bullish, bearish, or neutral"
+            )
+        trend_strength = trend_regime.get("signal_strength")
+        if (
+            isinstance(trend_strength, bool)
+            or not isinstance(trend_strength, (int, float))
+            or not 0 <= float(trend_strength) <= 1
+        ):
+            raise ValidationError(
+                "postmarket trend_regime.signal_strength must be between 0 and 1"
+            )
+
+        forecast = report.get("forecast")
+        if not isinstance(forecast, dict):
+            raise ValidationError("postmarket forecast must be an object")
+        if forecast.get("is_directional_forecast") is not False:
+            raise ValidationError("postmarket forecast must be explicitly non-directional")
+        if forecast.get("horizon") != "none":
+            raise ValidationError("postmarket forecast horizon must be none")
+        if "bias" in forecast or "signal_strength" in forecast:
+            raise ValidationError(
+                "postmarket forecast must not contain bias or signal_strength"
+            )
+        if forecast.get("calibrated_probability") is not None:
+            raise ValidationError("postmarket calibrated_probability must be null")
 
     if now is not None and (now.tzinfo is None or now.utcoffset() is None):
         raise ValidationError("now must be timezone-aware")

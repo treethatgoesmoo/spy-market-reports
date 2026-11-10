@@ -31,7 +31,7 @@ from market_calendar import EASTERN, market_hours
 
 
 LOGGER = logging.getLogger("thetadata_report_generator")
-VERSION = "1.3.2"
+VERSION = "1.4.0"
 DEFAULT_BASE_URL = "http://127.0.0.1:25503/v3"
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 
@@ -418,6 +418,14 @@ def _realized_volatility(values: Sequence[float], period: int = 20) -> Optional[
 
 def _rounded(value: Optional[float], places: int = 4) -> Optional[float]:
     return None if value is None else round(value, places)
+
+
+def _direction_label(return_pct: float, neutral_band_pct: float = 0.10) -> str:
+    if return_pct > neutral_band_pct:
+        return "bullish"
+    if return_pct < -neutral_band_pct:
+        return "bearish"
+    return "neutral"
 
 
 def _add_signal(
@@ -832,6 +840,14 @@ def build_report(
     hours = market_hours(trading_date)
     if hours.open_at is None or hours.close_at is None:
         raise GeneratorError(f"market hours unavailable for {trading_date}")
+    previous_close = stock[-2].close if len(stock) >= 2 else None
+    close_to_close_return = (
+        _pct_change(latest.close, previous_close)
+        if previous_close is not None
+        else session_return
+    )
+    session_direction = _direction_label(close_to_close_return)
+
     if session == "premarket":
         forecast = {
             "is_directional_forecast": True,
@@ -847,15 +863,15 @@ def build_report(
     else:
         forecast = {
             "is_directional_forecast": False,
-            "bias": bias,
-            "signal_strength": round(strength, 2),
             "calibrated_probability": None,
-            "horizon": "completed_session_trend_context",
+            "horizon": "none",
             "target": None,
-            "rationale": rationale,
+            "rationale": [
+                "Postmarket reports are descriptive; use session_direction and "
+                "trend_regime instead of interpreting this object as a forecast"
+            ],
         }
 
-    previous_close = stock[-2].close if len(stock) >= 2 else None
     return {
         "symbol": "SPY",
         "status": "live",
@@ -868,6 +884,26 @@ def build_report(
         "source": "thetadata-local-v3",
         "source_venue": "nqb",
         "data_through": expected_data_date.isoformat(),
+        **(
+            {
+                "session_direction": {
+                    "bias": session_direction,
+                    "basis": "previous_close_to_close",
+                    "return_pct": _rounded(close_to_close_return),
+                    "open_to_close_pct": _rounded(session_return),
+                },
+                "trend_regime": {
+                    "bias": bias,
+                    "signal_strength": round(strength, 2),
+                    "score": round(score, 2),
+                    "maximum_absolute_score": 4.5,
+                    "lookback_sessions": min(20, len(stock)),
+                    "rationale": rationale,
+                },
+            }
+            if session == "postmarket"
+            else {}
+        ),
         "market": {
             "as_of": latest.last_timestamp,
             "open": _rounded(latest.open),
@@ -877,11 +913,7 @@ def build_report(
             "vwap": _rounded(latest.vwap),
             "volume": latest.volume,
             "intraday_return_pct": _rounded(session_return),
-            "previous_close_to_close_pct": (
-                _rounded(_pct_change(latest.close, previous_close))
-                if previous_close is not None
-                else None
-            ),
+            "previous_close_to_close_pct": _rounded(close_to_close_return),
         },
         "analysis": {
             "method": "transparent-stock-rule-score-v1",
@@ -1057,14 +1089,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             lookback_calendar_days=args.lookback_calendar_days,
         )
         write_report(args.output, report)
-        LOGGER.info(
-            "wrote %s %s report to %s (bias=%s signal_strength=%s)",
-            args.trading_date,
-            args.session,
-            args.output,
-            report["forecast"]["bias"],
-            report["forecast"]["signal_strength"],
-        )
+        if args.session == "postmarket":
+            LOGGER.info(
+                "wrote %s postmarket report to %s "
+                "(session_direction=%s trend_regime=%s trend_signal_strength=%s)",
+                args.trading_date,
+                args.output,
+                report["session_direction"]["bias"],
+                report["trend_regime"]["bias"],
+                report["trend_regime"]["signal_strength"],
+            )
+        else:
+            LOGGER.info(
+                "wrote %s %s report to %s (bias=%s signal_strength=%s)",
+                args.trading_date,
+                args.session,
+                args.output,
+                report["forecast"]["bias"],
+                report["forecast"]["signal_strength"],
+            )
         return 0
     except GeneratorError as exc:
         LOGGER.error("report generation failed: %s", exc)

@@ -64,6 +64,42 @@ def stock_rows(days: list[date]) -> list[dict]:
     return rows
 
 
+def bullish_rebound_in_bearish_trend_rows(days: list[date]) -> list[dict]:
+    if len(days) != 22:
+        raise AssertionError("fixture requires exactly 22 trading days")
+    closes = [780.0 - index * 1.5 for index in range(17)]
+    closes.extend([746.0, 742.0, 738.0, 735.35, 752.64])
+    rows: list[dict] = []
+    for index, (day, close) in enumerate(zip(days, closes)):
+        open_price = 741.95 if index == len(days) - 1 else close + 0.5
+        midpoint = (open_price + close) / 2
+        rows.extend(
+            [
+                {
+                    "timestamp": f"{day.isoformat()}T09:30:00.000",
+                    "open": open_price,
+                    "high": max(open_price, midpoint) + 0.4,
+                    "low": min(open_price, midpoint) - 0.4,
+                    "close": midpoint,
+                    "volume": 900_000,
+                    "count": 900,
+                    "vwap": midpoint,
+                },
+                {
+                    "timestamp": f"{day.isoformat()}T15:55:00.000",
+                    "open": midpoint,
+                    "high": max(midpoint, close) + 0.4,
+                    "low": min(midpoint, close) - 0.4,
+                    "close": close,
+                    "volume": 1_100_000,
+                    "count": 1100,
+                    "vwap": (midpoint + close) / 2,
+                },
+            ]
+        )
+    return rows
+
+
 def intraday_rows(day: date) -> list[dict]:
     rows: list[dict] = []
     start = datetime.combine(day, datetime.min.time()).replace(hour=9, minute=30)
@@ -142,6 +178,33 @@ class GeneratorTests(unittest.TestCase):
             stock_rows=stock_rows(days),
         )
         self.assertEqual(report["data_through"], "2026-11-06")
+        self.assertEqual(report["session_direction"]["bias"], "bullish")
+        self.assertEqual(report["trend_regime"]["bias"], "bullish")
+        self.assertFalse(report["forecast"]["is_directional_forecast"])
+        self.assertNotIn("bias", report["forecast"])
+        self.assertNotIn("signal_strength", report["forecast"])
+        validate_report(
+            report,
+            expected_session="postmarket",
+            now=generated + timedelta(minutes=1),
+        )
+
+    def test_postmarket_separates_bullish_day_from_bearish_trend(self) -> None:
+        trading_date = date(2026, 11, 9)
+        days = trading_days_ending(trading_date, 22)
+        generated = datetime(2026, 11, 9, 21, 30, tzinfo=timezone.utc)
+        report = build_report(
+            session="postmarket",
+            trading_date=trading_date,
+            generated_at=generated,
+            stock_rows=bullish_rebound_in_bearish_trend_rows(days),
+        )
+
+        self.assertEqual(report["session_direction"]["bias"], "bullish")
+        self.assertGreater(report["session_direction"]["return_pct"], 2.0)
+        self.assertEqual(report["trend_regime"]["bias"], "bearish")
+        self.assertEqual(report["forecast"]["horizon"], "none")
+        self.assertNotIn("bias", report["forecast"])
         validate_report(
             report,
             expected_session="postmarket",
@@ -425,7 +488,9 @@ class GeneratorTests(unittest.TestCase):
 
             self.assertEqual(result, 0)
             self.assertTrue(output.is_file())
-            self.assertTrue(any("signal_strength=" in line for line in logs.output))
+            self.assertTrue(any("session_direction=" in line for line in logs.output))
+            self.assertTrue(any("trend_regime=" in line for line in logs.output))
+            self.assertTrue(any("trend_signal_strength=" in line for line in logs.output))
             self.assertFalse(any("confidence=" in line for line in logs.output))
 
 
