@@ -1,99 +1,90 @@
 {
   "analysis": {
     "indicators": {
-      "atr14": 11.9711,
-      "ema12": 755.0458,
-      "ema26": 762.514,
-      "momentum_1d_pct": 2.354,
-      "momentum_20d_pct": -3.2671,
-      "momentum_5d_pct": 0.0705,
-      "realized_volatility_20d_pct": 21.9486,
-      "rsi14": 43.0442,
-      "sma20": 762.1,
-      "sma5": 748.45,
-      "volume_vs_20d_average": 1.0106
+      "ema12_5m": 749.9925,
+      "ema6_5m": 750.0999,
+      "momentum_15m_pct": -0.0426,
+      "momentum_30m_pct": -0.2015,
+      "momentum_60m_pct": 0.1589,
+      "price_vs_session_vwap_pct": 0.1986
     },
-    "method": "transparent-stock-rule-score-v1",
-    "score": -2.0,
+    "maximum_absolute_score": 3.25,
+    "method": "transparent-intraday-rule-score-v1",
+    "score": -0.25,
     "signals": [
       {
-        "contribution": -1.0,
-        "name": "spy_close_vs_sma20",
-        "reason": "SPY close relative to its available 20-session simple moving average",
-        "value": -1.24
+        "contribution": 0.0,
+        "name": "ema6_vs_ema12_5m",
+        "reason": "Short intraday trend using completed five-minute bars",
+        "value": 0.0143
       },
       {
         "contribution": -1.0,
-        "name": "spy_sma5_vs_sma20",
-        "reason": "Short trend relative to the medium trend",
-        "value": -1.7911
+        "name": "momentum_30m_pct",
+        "reason": "Thirty-minute price momentum",
+        "value": -0.2015
+      },
+      {
+        "contribution": 0.75,
+        "name": "price_vs_session_vwap_pct",
+        "reason": "Last completed-bar close relative to Nasdaq Basic session VWAP",
+        "value": 0.1986
       },
       {
         "contribution": 0.0,
-        "name": "spy_momentum_5d_pct",
-        "reason": "Five-session SPY price momentum",
-        "value": 0.0705
-      },
-      {
-        "contribution": -0.5,
-        "name": "spy_rsi14",
-        "reason": "RSI trend confirmation with a small mean-reversion adjustment at extremes",
-        "value": 43.0442
-      },
-      {
-        "contribution": 0.5,
-        "name": "latest_session_return_pct",
-        "reason": "Most recent completed regular session direction",
-        "value": 1.4421
+        "name": "momentum_15m_pct",
+        "reason": "Fifteen-minute price momentum",
+        "value": -0.0426
       }
     ]
   },
   "data_quality": {
+    "completed_bars": 13,
     "completeness": 1.0,
     "coverage": "not consolidated UTP/CTA",
     "feed": "Nasdaq Basic",
     "inputs": [
       "SPY stock OHLC (Nasdaq Basic)"
     ],
-    "spy_bars_latest_session": 78,
-    "spy_sessions": 21
+    "interval_minutes": 5
   },
-  "data_through": "2026-11-09",
+  "data_through": "2026-11-10",
   "disclaimer": "Uncalibrated rule-based signal strength for research; not a probability or investment advice.",
   "forecast": {
-    "bias": "bearish",
+    "bias": "neutral",
     "calibrated_probability": null,
-    "horizon": "first_regular_session_hour",
+    "duration_minutes": 60,
+    "horizon": "next_market_interval",
     "is_directional_forecast": true,
     "rationale": [
-      "spy_close_vs_sma20 contributed -1",
-      "spy_sma5_vs_sma20 contributed -1",
-      "spy_rsi14 contributed -0.5",
-      "latest_session_return_pct contributed +0.5"
+      "momentum_30m_pct contributed -1",
+      "price_vs_session_vwap_pct contributed +0.75"
     ],
-    "signal_strength": 0.44,
-    "target": "window-end SPY price versus regular-session open",
-    "window_end": "2026-11-10T10:30:00-05:00",
-    "window_start": "2026-11-10T09:30:00-05:00"
+    "reference_price": 750.2,
+    "signal_strength": 0.08,
+    "target": "window-end SPY price versus reference_price",
+    "window_end": "2026-11-10T11:35:00-05:00",
+    "window_start": "2026-11-10T10:35:00-05:00"
   },
-  "generated_at": "2026-11-10T13:45:36.177733Z",
+  "generated_at": "2026-11-10T15:35:32.221576Z",
   "generator": {
     "name": "thetadata_report_generator",
     "version": "1.4.0"
   },
   "market": {
-    "as_of": "2026-11-09T15:55:00.000",
-    "close": 752.65,
-    "high": 755.42,
-    "intraday_return_pct": 1.4421,
-    "low": 741.025,
-    "open": 741.95,
-    "previous_close_to_close_pct": 2.354,
-    "volume": 40128510,
-    "vwap": 748.159
+    "as_of": "2026-11-10T10:35:00-05:00",
+    "last_completed_bar_start": "2026-11-10T10:30:00-05:00",
+    "open_to_current_pct": 0.3075,
+    "previous_close_to_current_pct": -0.3255,
+    "reference_price": 750.2,
+    "session_high": 752.139,
+    "session_low": 747.05,
+    "session_open": 747.9,
+    "session_volume_nasdaq_basic": 3940509,
+    "session_vwap": 748.7129
   },
   "market_timezone": "America/New_York",
-  "session": "premarket",
+  "session": "intraday",
   "source": "thetadata-local-v3",
   "source_venue": "nqb",
   "status": "live",
