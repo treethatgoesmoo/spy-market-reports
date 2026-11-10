@@ -472,4 +472,3 @@ sudo tail -n 200 /var/log/spy-report-publisher/publisher.log
 The hourly ChatGPT repository monitor is separate and should remain as-is; this
 package does not create another monitor.
 
-
