@@ -1,12 +1,12 @@
 {
   "analysis": {
     "indicators": {
-      "ema12_5m": 760.8752,
-      "ema6_5m": 760.96,
-      "momentum_15m_pct": 0.0598,
-      "momentum_30m_pct": 0.0388,
-      "momentum_60m_pct": 0.0539,
-      "price_vs_session_vwap_pct": 0.5592
+      "ema12_5m": 760.71,
+      "ema6_5m": 760.6214,
+      "momentum_15m_pct": 0.0533,
+      "momentum_30m_pct": 0.0085,
+      "momentum_60m_pct": -0.0545,
+      "price_vs_session_vwap_pct": 0.4791
     },
     "maximum_absolute_score": 3.25,
     "method": "transparent-intraday-rule-score-v1",
@@ -16,30 +16,30 @@
         "contribution": 0.0,
         "name": "ema6_vs_ema12_5m",
         "reason": "Short intraday trend using completed five-minute bars",
-        "value": 0.0111
+        "value": -0.0117
       },
       {
         "contribution": 0.0,
         "name": "momentum_30m_pct",
         "reason": "Thirty-minute price momentum",
-        "value": 0.0388
+        "value": 0.0085
       },
       {
         "contribution": 0.75,
         "name": "price_vs_session_vwap_pct",
         "reason": "Last completed-bar close relative to Nasdaq Basic session VWAP",
-        "value": 0.5592
+        "value": 0.4791
       },
       {
         "contribution": 0.0,
         "name": "momentum_15m_pct",
         "reason": "Fifteen-minute price momentum",
-        "value": 0.0598
+        "value": 0.0533
       }
     ]
   },
   "data_quality": {
-    "completed_bars": 37,
+    "completed_bars": 49,
     "completeness": 1.0,
     "coverage": "not consolidated UTP/CTA",
     "feed": "Nasdaq Basic",
@@ -59,28 +59,28 @@
     "rationale": [
       "price_vs_session_vwap_pct contributed +0.75"
     ],
-    "reference_price": 761.25,
+    "reference_price": 760.835,
     "signal_strength": 0.23,
     "target": "window-end SPY price versus reference_price",
-    "window_end": "2026-11-12T13:35:00-05:00",
-    "window_start": "2026-11-12T12:35:00-05:00"
+    "window_end": "2026-11-12T14:35:00-05:00",
+    "window_start": "2026-11-12T13:35:00-05:00"
   },
-  "generated_at": "2026-11-12T17:35:44.295374Z",
+  "generated_at": "2026-11-12T18:35:42.984791Z",
   "generator": {
     "name": "thetadata_report_generator",
     "version": "1.4.0"
   },
   "market": {
-    "as_of": "2026-11-12T12:35:00-05:00",
-    "last_completed_bar_start": "2026-11-12T12:30:00-05:00",
-    "open_to_current_pct": 0.9736,
-    "previous_close_to_current_pct": 0.1922,
-    "reference_price": 761.25,
+    "as_of": "2026-11-12T13:35:00-05:00",
+    "last_completed_bar_start": "2026-11-12T13:30:00-05:00",
+    "open_to_current_pct": 0.9185,
+    "previous_close_to_current_pct": 0.1375,
+    "reference_price": 760.835,
     "session_high": 763.03,
     "session_low": 753.7,
     "session_open": 753.91,
-    "session_volume_nasdaq_basic": 9694147,
-    "session_vwap": 757.0164
+    "session_volume_nasdaq_basic": 10730586,
+    "session_vwap": 757.2071
   },
   "market_timezone": "America/New_York",
   "session": "intraday",
