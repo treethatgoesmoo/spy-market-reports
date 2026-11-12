@@ -1,0 +1,94 @@
+{
+  "analysis": {
+    "indicators": {
+      "ema12_5m": 760.6327,
+      "ema6_5m": 761.4291,
+      "momentum_15m_pct": -0.2413,
+      "momentum_30m_pct": 0.0895,
+      "momentum_60m_pct": 0.4953,
+      "price_vs_session_vwap_pct": 0.544
+    },
+    "maximum_absolute_score": 3.25,
+    "method": "transparent-intraday-rule-score-v1",
+    "score": 1.25,
+    "signals": [
+      {
+        "contribution": 1.0,
+        "name": "ema6_vs_ema12_5m",
+        "reason": "Short intraday trend using completed five-minute bars",
+        "value": 0.1047
+      },
+      {
+        "contribution": 0.0,
+        "name": "momentum_30m_pct",
+        "reason": "Thirty-minute price momentum",
+        "value": 0.0895
+      },
+      {
+        "contribution": 0.75,
+        "name": "price_vs_session_vwap_pct",
+        "reason": "Last completed-bar close relative to Nasdaq Basic session VWAP",
+        "value": 0.544
+      },
+      {
+        "contribution": -0.5,
+        "name": "momentum_15m_pct",
+        "reason": "Fifteen-minute price momentum",
+        "value": -0.2413
+      }
+    ]
+  },
+  "data_quality": {
+    "completed_bars": 25,
+    "completeness": 1.0,
+    "coverage": "not consolidated UTP/CTA",
+    "feed": "Nasdaq Basic",
+    "inputs": [
+      "SPY stock OHLC (Nasdaq Basic)"
+    ],
+    "interval_minutes": 5
+  },
+  "data_through": "2026-11-12",
+  "disclaimer": "Uncalibrated rule-based signal strength for research; not a probability or investment advice.",
+  "forecast": {
+    "bias": "bullish",
+    "calibrated_probability": null,
+    "duration_minutes": 60,
+    "horizon": "next_market_interval",
+    "is_directional_forecast": true,
+    "rationale": [
+      "ema6_vs_ema12_5m contributed +1",
+      "price_vs_session_vwap_pct contributed +0.75",
+      "momentum_15m_pct contributed -0.5"
+    ],
+    "reference_price": 760.84,
+    "signal_strength": 0.38,
+    "target": "window-end SPY price versus reference_price",
+    "window_end": "2026-11-12T12:35:00-05:00",
+    "window_start": "2026-11-12T11:35:00-05:00"
+  },
+  "generated_at": "2026-11-12T16:35:24.575850Z",
+  "generator": {
+    "name": "thetadata_report_generator",
+    "version": "1.4.0"
+  },
+  "market": {
+    "as_of": "2026-11-12T11:35:00-05:00",
+    "last_completed_bar_start": "2026-11-12T11:30:00-05:00",
+    "open_to_current_pct": 0.9192,
+    "previous_close_to_current_pct": 0.1382,
+    "reference_price": 760.84,
+    "session_high": 763.03,
+    "session_low": 753.7,
+    "session_open": 753.91,
+    "session_volume_nasdaq_basic": 8255228,
+    "session_vwap": 756.7235
+  },
+  "market_timezone": "America/New_York",
+  "session": "intraday",
+  "source": "thetadata-local-v3",
+  "source_venue": "nqb",
+  "status": "live",
+  "symbol": "SPY",
+  "trading_date": "2026-11-12"
+}
