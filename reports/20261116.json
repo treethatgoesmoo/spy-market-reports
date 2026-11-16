@@ -19,35 +19,37 @@
         "15m": [
           "inside_bar"
         ],
-        "1m": [],
+        "1m": [
+          "hammer"
+        ],
         "5m": []
       },
-      "score": 0.0
+      "score": 0.15
     },
-    "consensus_score": -0.37,
+    "consensus_score": -0.34,
     "indicators": {
-      "price_vs_session_vwap_pct": -0.2803
+      "price_vs_session_vwap_pct": -0.3315
     },
     "market_signals": [
       {
         "name": "timeframe_consensus",
         "state": "bearish",
-        "value": -0.37
+        "value": -0.34
       },
       {
         "name": "candlestick_consensus",
         "state": "neutral",
-        "value": 0.0
+        "value": 0.15
       },
       {
         "name": "price_vs_session_vwap_pct",
         "state": "below",
-        "value": -0.2803
+        "value": -0.3315
       },
       {
         "name": "one_minute_volume_ratio",
-        "state": "normal",
-        "value": 0.8047
+        "state": "expanding",
+        "value": 1.7455
       }
     ],
     "method": "transparent-multitimeframe-rule-score-v2",
@@ -95,7 +97,7 @@
           "ema_fast_vs_slow_pct": -0.0056,
           "ema_slow": 745.9302,
           "momentum_pct": 0.0899,
-          "price_vs_session_vwap_pct": -0.1986,
+          "price_vs_session_vwap_pct": -0.1963,
           "recent_volume_ratio": 0.7431,
           "rsi14": 35.1351,
           "volume_signal": "contracting"
@@ -132,7 +134,7 @@
             "contribution": -0.5,
             "name": "price_vs_session_vwap_pct",
             "reason": "Last completed one-minute close relative to session VWAP",
-            "value": -0.1986
+            "value": -0.1963
           },
           {
             "contribution": 0.0,
@@ -166,98 +168,107 @@
       "1m": {
         "bias": "bearish",
         "candlestick_analysis": {
-          "bias": "neutral",
+          "bias": "bullish",
           "confirmation": {
             "near_resistance": false,
             "near_support": true,
             "price_vs_session_vwap": "below",
-            "volume": "normal"
+            "volume": "expanding"
           },
           "last_candle": {
-            "body_to_range": 0.8571,
+            "body_to_range": 0.1757,
             "direction": "bearish",
-            "end_at": "2026-11-16T11:50:00-05:00",
-            "lower_shadow_to_range": 0.1143,
-            "start_at": "2026-11-16T11:49:00-05:00",
-            "upper_shadow_to_range": 0.0286
+            "end_at": "2026-11-16T11:55:00-05:00",
+            "lower_shadow_to_range": 0.7297,
+            "start_at": "2026-11-16T11:54:00-05:00",
+            "upper_shadow_to_range": 0.0946
           },
           "maximum_absolute_score": 1.0,
           "note": "Pattern direction is contextual evidence, not a standalone probability",
-          "patterns": [],
-          "score": 0
+          "patterns": [
+            {
+              "bars_used": 1,
+              "bias": "bullish",
+              "context": "bearish",
+              "contribution": 0.6,
+              "name": "hammer",
+              "reason": "Long lower rejection after a decline is a bullish reversal candidate"
+            }
+          ],
+          "score": 0.6
         },
-        "completed_bars": 140,
+        "completed_bars": 145,
         "indicators": {
-          "ema_fast": 745.5606,
-          "ema_fast_vs_slow_pct": -0.0369,
-          "ema_slow": 745.8362,
-          "momentum_pct": -0.0818,
-          "price_vs_session_vwap_pct": -0.2803,
-          "recent_volume_ratio": 0.8047,
-          "rsi14": 24.8957,
-          "volume_signal": "normal"
+          "ema_fast": 745.1029,
+          "ema_fast_vs_slow_pct": -0.0517,
+          "ema_slow": 745.4881,
+          "momentum_pct": -0.0537,
+          "price_vs_session_vwap_pct": -0.3315,
+          "recent_volume_ratio": 1.7455,
+          "rsi14": 20.7955,
+          "volume_signal": "expanding"
         },
         "interval_minutes": 1,
         "maximum_absolute_score": 4.75,
-        "score": -3.75,
+        "score": -3.15,
         "signals": [
           {
             "contribution": -1.0,
             "name": "ema_fast_vs_slow_pct",
             "reason": "1m fast EMA relative to slow EMA",
-            "value": -0.0369
+            "value": -0.0517
           },
           {
             "contribution": -1.0,
             "name": "trend_line_slope_pct_per_bar",
             "reason": "1m least-squares close trend",
-            "value": -0.01
+            "value": -0.0106
           },
           {
             "contribution": -0.75,
             "name": "momentum_pct",
             "reason": "1m recent price momentum",
-            "value": -0.0818
+            "value": -0.0537
           },
           {
             "contribution": -0.5,
             "name": "rsi14",
             "reason": "1m RSI trend confirmation",
-            "value": 24.8957
+            "value": 20.7955
           },
           {
             "contribution": -0.5,
             "name": "price_vs_session_vwap_pct",
             "reason": "Last completed one-minute close relative to session VWAP",
-            "value": -0.2803
+            "value": -0.3315
           },
           {
-            "contribution": 0.0,
+            "contribution": 0.6,
             "name": "candlestick_pattern_score",
-            "reason": "No recognized 1m candlestick pattern",
-            "value": 0.0
+            "reason": "1m contextual candlestick patterns: hammer",
+            "value": 0.6
           }
         ],
         "support_resistance": {
-          "breakout_state": "below_support",
+          "breakout_state": "inside_range",
           "lookback_bars": 19,
-          "price_vs_resistance_pct": -0.2357,
-          "price_vs_support_pct": -0.0201,
-          "resistance": 746.86,
-          "support": 745.25
+          "price_vs_resistance_pct": -0.2785,
+          "price_vs_support_pct": 0.0027,
+          "resistance": 746.78,
+          "support": 744.68
         },
         "trend_line": {
           "direction": "bearish",
-          "end_at": "2026-11-16T11:50:00-05:00",
-          "end_price": 745.2653,
+          "end_at": "2026-11-16T11:55:00-05:00",
+          "end_price": 744.8145,
           "lookback_bars": 20,
           "lookback_minutes": 20,
           "method": "least_squares_close",
-          "r_squared": 0.8136,
-          "slope_pct_per_bar": -0.009962,
-          "slope_points_per_bar": -0.074314,
-          "start_at": "2026-11-16T11:30:00-05:00",
-          "start_price": 746.6773
+          "r_squared": 0.8474,
+          "slope_pct_per_bar": -0.010569,
+          "slope_points_per_bar": -0.078795,
+          "start_at": "2026-11-16T11:35:00-05:00",
+          "start_price": 746.3116
         }
       },
       "5m": {
@@ -271,27 +282,27 @@
             "volume": "contracting"
           },
           "last_candle": {
-            "body_to_range": 0.9444,
+            "body_to_range": 0.4886,
             "direction": "bearish",
-            "end_at": "2026-11-16T11:50:00-05:00",
-            "lower_shadow_to_range": 0.0556,
-            "start_at": "2026-11-16T11:45:00-05:00",
-            "upper_shadow_to_range": 0.0
+            "end_at": "2026-11-16T11:55:00-05:00",
+            "lower_shadow_to_range": 0.3068,
+            "start_at": "2026-11-16T11:50:00-05:00",
+            "upper_shadow_to_range": 0.2045
           },
           "maximum_absolute_score": 1.0,
           "note": "Pattern direction is contextual evidence, not a standalone probability",
           "patterns": [],
           "score": 0
         },
-        "completed_bars": 28,
+        "completed_bars": 29,
         "indicators": {
-          "ema_fast": 745.8188,
-          "ema_fast_vs_slow_pct": -0.0149,
-          "ema_slow": 745.9302,
-          "momentum_pct": -0.2129,
-          "price_vs_session_vwap_pct": -0.2803,
-          "recent_volume_ratio": 0.4968,
-          "rsi14": 52.3399,
+          "ema_fast": 745.4996,
+          "ema_fast_vs_slow_pct": -0.0324,
+          "ema_slow": 745.7409,
+          "momentum_pct": -0.1702,
+          "price_vs_session_vwap_pct": -0.3315,
+          "recent_volume_ratio": 0.5594,
+          "rsi14": 49.4543,
           "volume_signal": "contracting"
         },
         "interval_minutes": 5,
@@ -302,31 +313,31 @@
             "contribution": 0.0,
             "name": "ema_fast_vs_slow_pct",
             "reason": "5m fast EMA relative to slow EMA",
-            "value": -0.0149
+            "value": -0.0324
           },
           {
             "contribution": 0.0,
             "name": "trend_line_slope_pct_per_bar",
             "reason": "5m least-squares close trend",
-            "value": -0.0117
+            "value": -0.0142
           },
           {
             "contribution": -0.75,
             "name": "momentum_pct",
             "reason": "5m recent price momentum",
-            "value": -0.2129
+            "value": -0.1702
           },
           {
             "contribution": 0.0,
             "name": "rsi14",
             "reason": "5m RSI trend confirmation",
-            "value": 52.3399
+            "value": 49.4543
           },
           {
             "contribution": -0.5,
             "name": "price_vs_session_vwap_pct",
             "reason": "Last completed one-minute close relative to session VWAP",
-            "value": -0.2803
+            "value": -0.3315
           },
           {
             "contribution": 0.0,
@@ -336,25 +347,25 @@
           }
         ],
         "support_resistance": {
-          "breakout_state": "inside_range",
+          "breakout_state": "below_support",
           "lookback_bars": 11,
-          "price_vs_resistance_pct": -0.3024,
-          "price_vs_support_pct": 0.0336,
+          "price_vs_resistance_pct": -0.3559,
+          "price_vs_support_pct": -0.0201,
           "resistance": 747.36,
           "support": 744.85
         },
         "trend_line": {
           "direction": "neutral",
-          "end_at": "2026-11-16T11:50:00-05:00",
-          "end_price": 745.7117,
+          "end_at": "2026-11-16T11:55:00-05:00",
+          "end_price": 745.4132,
           "lookback_bars": 12,
           "lookback_minutes": 60,
           "method": "least_squares_close",
-          "r_squared": 0.2394,
-          "slope_pct_per_bar": -0.011696,
-          "slope_points_per_bar": -0.087273,
-          "start_at": "2026-11-16T10:50:00-05:00",
-          "start_price": 746.6717
+          "r_squared": 0.2874,
+          "slope_pct_per_bar": -0.01422,
+          "slope_points_per_bar": -0.106084,
+          "start_at": "2026-11-16T10:55:00-05:00",
+          "start_price": 746.5801
         }
       }
     }
@@ -362,8 +373,8 @@
   "data_quality": {
     "completed_bars": {
       "15m": 9,
-      "1m": 140,
-      "5m": 28
+      "1m": 145,
+      "5m": 29
     },
     "completeness": 1.0,
     "coverage": "not consolidated UTP/CTA",
@@ -382,33 +393,33 @@
     "horizon": "next_15_minutes",
     "is_directional_forecast": true,
     "rationale": [
-      "1m timeframe is bearish with a bearish regression trend and neutral candlestick evidence",
+      "1m timeframe is bearish with a bearish regression trend and bullish candlestick evidence",
       "5m timeframe is bearish with a neutral regression trend and neutral candlestick evidence",
       "15m timeframe is neutral with a neutral regression trend and neutral candlestick evidence",
-      "Price is below session VWAP by 0.28%"
+      "Price is below session VWAP by 0.33%"
     ],
-    "reference_price": 745.1,
-    "signal_strength": 0.34,
+    "reference_price": 744.7,
+    "signal_strength": 0.31,
     "target": "15-minute window-end SPY price versus reference_price",
-    "window_end": "2026-11-16T12:05:00-05:00",
-    "window_start": "2026-11-16T11:50:00-05:00"
+    "window_end": "2026-11-16T12:10:00-05:00",
+    "window_start": "2026-11-16T11:55:00-05:00"
   },
-  "generated_at": "2026-11-16T16:50:11.895154Z",
+  "generated_at": "2026-11-16T16:55:13.515277Z",
   "generator": {
     "name": "thetadata_report_generator",
     "version": "1.6.0"
   },
   "market": {
-    "as_of": "2026-11-16T11:50:00-05:00",
-    "last_completed_bar_start": "2026-11-16T11:49:00-05:00",
-    "open_to_current_pct": -0.6069,
-    "previous_close_to_current_pct": -1.2131,
-    "reference_price": 745.1,
+    "as_of": "2026-11-16T11:55:00-05:00",
+    "last_completed_bar_start": "2026-11-16T11:54:00-05:00",
+    "open_to_current_pct": -0.6603,
+    "previous_close_to_current_pct": -1.2662,
+    "reference_price": 744.7,
     "session_high": 749.82,
     "session_low": 743.31,
     "session_open": 749.65,
-    "session_volume_nasdaq_basic": 8403776,
-    "session_vwap": 747.1943
+    "session_volume_nasdaq_basic": 8569781,
+    "session_vwap": 747.1769
   },
   "market_timezone": "America/New_York",
   "session": "intraday",
