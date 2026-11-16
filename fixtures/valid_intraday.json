@@ -4,11 +4,11 @@
   "market_timezone": "America/New_York",
   "session": "intraday",
   "trading_date": "2026-11-09",
-  "generated_at": "2026-11-09T15:35:00Z",
+  "generated_at": "2026-11-09T15:50:00Z",
   "source": "thetadata-local-v3",
   "source_venue": "nqb",
   "market": {
-    "as_of": "2026-11-09T10:35:00-05:00",
+    "as_of": "2026-11-09T10:50:00-05:00",
     "reference_price": 739.5
   },
   "forecast": {
@@ -16,18 +16,42 @@
     "bias": "neutral",
     "signal_strength": 0.31,
     "calibrated_probability": null,
-    "horizon": "next_market_interval",
-    "window_start": "2026-11-09T10:35:00-05:00",
-    "window_end": "2026-11-09T11:35:00-05:00",
-    "duration_minutes": 60,
-    "target": "window-end SPY price versus reference_price",
+    "horizon": "next_15_minutes",
+    "window_start": "2026-11-09T10:50:00-05:00",
+    "window_end": "2026-11-09T11:05:00-05:00",
+    "duration_minutes": 15,
+    "target": "15-minute window-end SPY price versus reference_price",
     "reference_price": 739.5,
     "rationale": [
       "No configured short-horizon signal crossed its threshold"
     ]
   },
+  "analysis": {
+    "method": "transparent-multitimeframe-rule-score-v1",
+    "timeframes": {
+      "1m": {
+        "interval_minutes": 1,
+        "bias": "neutral",
+        "trend_line": {"slope_pct_per_bar": 0.001},
+        "support_resistance": {"support": 738.0, "resistance": 741.0}
+      },
+      "5m": {
+        "interval_minutes": 5,
+        "bias": "neutral",
+        "trend_line": {"slope_pct_per_bar": 0.002},
+        "support_resistance": {"support": 737.5, "resistance": 741.5}
+      },
+      "15m": {
+        "interval_minutes": 15,
+        "bias": "neutral",
+        "trend_line": {"slope_pct_per_bar": 0.003},
+        "support_resistance": {"support": 736.0, "resistance": 742.0}
+      }
+    }
+  },
   "data_quality": {
     "feed": "Nasdaq Basic",
-    "coverage": "not consolidated UTP/CTA"
+    "coverage": "not consolidated UTP/CTA",
+    "source_interval_minutes": 1
   }
 }

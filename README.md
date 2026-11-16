@@ -4,9 +4,10 @@ This repository contains a standard-library-only Python pipeline that calls a lo
 running ThetaData v3 terminal, gathers SPY stock data, creates a transparent
 rule-based market report, validates it, writes `reports/YYYYMMDD.json`, updates
 `latest.json`, commits the paths on `main`, and pushes them to this repository.
-Intraday runs also archive immutable hourly signals below `reports/YYYYMMDD/`.
+Intraday runs also archive immutable five-minute signal snapshots below
+`reports/YYYYMMDD/`.
 
-Package version: **1.4.0**.
+Package version: **1.5.0**.
 
 The publisher is intentionally fail-closed. Validation finishes before it accesses
 Git. A bad report cannot replace `latest.json`.
@@ -25,9 +26,10 @@ Git. A bad report cannot replace `latest.json`.
 - Future and stale reports are rejected. The default maximum age is 120 minutes.
 - Session ordering is premarket, intraday, then postmarket. An older or lower-ranked
   same-day report cannot replace a newer report.
-- Intraday forecasts require an explicit window of no more than 60 minutes ending by
-  the market close. They use `signal_strength`; probability-like `confidence` is
-  rejected until a model has actually been calibrated.
+- Intraday forecasts require one-minute source data, explicit 1m/5m/15m analysis,
+  and a window of no more than 15 minutes ending by the market close. They use
+  `signal_strength`; probability-like `confidence` is rejected until a model has
+  actually been calibrated.
 - Canonically identical content is a successful no-op, so retries do not create
   duplicate commits.
 - The checkout must be clean and on `main`. Only the report path and `latest.json`
@@ -48,17 +50,23 @@ available in Git history.
 is required. It connects to Theta Terminal v3 at
 `http://127.0.0.1:25503/v3` and requests:
 
-- 5-minute SPY bars from `/stock/history/ohlc`;
-- up to 30 calendar days of regular-session history.
+- 1-minute current-session SPY bars from `/stock/history/ohlc` for intraday signals;
+- 5-minute SPY bars for daily premarket/postmarket history and the previous close;
+- up to 30 calendar days of regular-session history for daily reports.
 
 Premarket and postmarket reports calculate daily moving averages, EMA trend, RSI,
-ATR, realized volatility, and momentum. Intraday reports use only completed
-five-minute bars and combine short EMA spread, 15/30-minute momentum, and distance
-from session VWAP. Every contribution is stored in `analysis.signals`.
+ATR, realized volatility, and momentum. Intraday reports fetch completed one-minute
+bars once, then aggregate those same observations locally into aligned 5-minute and
+15-minute bars. Each timeframe includes fast/slow EMA spread, RSI, momentum, session
+VWAP distance, relative volume, least-squares close trend line (slope and R-squared),
+support/resistance, breakout state, and its contributing market signals. The final
+direction requires agreement from at least two timeframes, cannot oppose the 15-minute
+timeframe, and must agree with price versus session VWAP; otherwise it is neutral.
 
 `forecast.signal_strength` is the normalized magnitude of a transparent rule score;
 it is deliberately **not** labeled confidence and is not a win probability. Premarket
-reports target the first regular-session hour. Intraday reports contain exact
+reports target the first regular-session hour. Intraday reports forecast the next
+15 minutes and contain exact
 `window_start`, `window_end`, `duration_minutes`, and `reference_price` fields.
 Postmarket reports are completed-session summaries, not next-session forecasts. They
 lead with `session_direction`, based on the close-to-close return, and separately
@@ -327,10 +335,12 @@ sudo systemctl enable --now \
 systemctl list-timers 'spy-report-publisher*'
 ```
 
-The premarket timer fires at 08:45 ET. Intraday runs fire at 10:35, 11:35, 12:35,
-13:35, 14:35, and 15:35 ET. The first five-minute-bar hour is therefore complete;
-the last forecast is capped at 16:00. On a 13:00 early close, only the 10:35, 11:35,
-and 12:35 slots pass the market-aware gate, and the last window is capped at 13:00.
+The premarket timer fires at 08:45 ET. Intraday runs start at 10:50 ET, after five
+complete 15-minute bars are available, and then run every five minutes through
+15:55 ET. Each forecast targets the next 15 minutes and is capped at the market
+close. On a 13:00 early close, the last accepted slot is 12:55 ET. Systemd may still
+invoke later wall-clock slots, but the market-aware gate skips them without calling
+ThetaData or Git.
 The postmarket timers fire at 13:30 and 16:30 ET; only the one 30 minutes after the
 actual close passes. Holidays skip every session. `OnCalendar` uses
 `America/New_York`, so daylight-saving changes do not require UTC cron edits.
@@ -350,7 +360,8 @@ python3 -m py_compile market_calendar.py spy_report_publisher.py schedule_runner
 The test suite uses temporary local Git repositories; it never contacts or modifies
 GitHub. It covers regular and early-close sessions, holidays, test-data rejection,
 the reported 05:17 UTC/date mismatch pattern, duplicate suppression, transactional
-commits, intraday archive publication, and session advancement. On Linux (including Raspberry Pi),
+commits, five-minute intraday archive publication, 1m/5m/15m signal construction,
+trend lines, and session advancement. On Linux (including Raspberry Pi),
 the integration test also pushes to a temporary local bare remote; Windows runs the
 same transaction without the local transport because some Git for Windows sandboxed
 installations cannot launch the file-transport helper. Generator tests use deterministic

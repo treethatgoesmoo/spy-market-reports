@@ -52,7 +52,8 @@ class MakefileTests(unittest.TestCase):
         timer = ROOT / "systemd" / "spy-report-publisher-intraday.timer"
         self.assertTrue(timer.is_file())
         timer_text = timer.read_text(encoding="utf-8")
-        self.assertIn("10..15:35:00 America/New_York", timer_text)
+        self.assertIn("10:50/5:00 America/New_York", timer_text)
+        self.assertIn("11..15:00/5:00 America/New_York", timer_text)
         self.assertIn("spy-report-publisher@intraday.service", timer_text)
 
     def test_status_never_opens_a_pager_and_failures_can_be_cleared(self) -> None:
@@ -62,6 +63,9 @@ class MakefileTests(unittest.TestCase):
         )
         self.assertIn("clear-failures:", self.text)
         self.assertIn("systemctl reset-failed", self.text)
+
+    def test_update_restarts_active_timers_after_installing_units(self) -> None:
+        self.assertIn("systemctl try-restart $(TIMERS)", self.text)
 
 
 if __name__ == "__main__":

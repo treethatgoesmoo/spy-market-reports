@@ -1,8 +1,9 @@
 [Unit]
-Description=Schedule hourly SPY intraday next-interval reports
+Description=Schedule five-minute SPY multi-timeframe market signals
 
 [Timer]
-OnCalendar=Mon..Fri *-*-* 10..15:35:00 America/New_York
+OnCalendar=Mon..Fri *-*-* 10:50/5:00 America/New_York
+OnCalendar=Mon..Fri *-*-* 11..15:00/5:00 America/New_York
 AccuracySec=15s
 Persistent=true
 Unit=spy-report-publisher@intraday.service

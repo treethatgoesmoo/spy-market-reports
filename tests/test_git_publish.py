@@ -194,13 +194,13 @@ class GitPublishTests(unittest.TestCase):
             report,
             "intraday",
             self.config,
-            now=datetime(2026, 11, 9, 15, 36, tzinfo=timezone.utc),
+            now=datetime(2026, 11, 9, 15, 51, tzinfo=timezone.utc),
             push=self.can_test_local_push,
         )
         self.assertEqual(result.outcome, "published")
         self.assertEqual(
             result.report_path,
-            "reports/20261109/intraday-103500.json",
+            "reports/20261109/intraday-105000.json",
         )
         archive = self.repo / result.report_path
         daily = self.repo / "reports" / "20261109.json"
@@ -214,7 +214,7 @@ class GitPublishTests(unittest.TestCase):
             report,
             "intraday",
             self.config,
-            now=datetime(2026, 11, 9, 15, 36, tzinfo=timezone.utc),
+            now=datetime(2026, 11, 9, 15, 51, tzinfo=timezone.utc),
             push=self.can_test_local_push,
         )
         self.assertEqual(duplicate.outcome, "duplicate")

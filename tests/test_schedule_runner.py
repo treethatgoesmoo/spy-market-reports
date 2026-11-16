@@ -65,21 +65,21 @@ premarket_time = 08:45
         )
         self.assertTrue(due)
 
-    def test_intraday_hourly_slot_is_due(self) -> None:
+    def test_intraday_five_minute_slot_is_due(self) -> None:
         due, reason, trading_date = should_run(
             "intraday",
             config(),
-            now=datetime(2026, 11, 9, 15, 35, tzinfo=timezone.utc),
+            now=datetime(2026, 11, 9, 15, 50, tzinfo=timezone.utc),
         )
         self.assertTrue(due)
-        self.assertIn("10:35", reason)
+        self.assertIn("10:50", reason)
         self.assertEqual(trading_date.isoformat(), "2026-11-09")
 
-    def test_intraday_is_not_due_before_first_completed_hour(self) -> None:
+    def test_intraday_is_not_due_before_five_complete_fifteen_minute_bars(self) -> None:
         due, reason, _ = should_run(
             "intraday",
             config(),
-            now=datetime(2026, 11, 9, 15, 20, tzinfo=timezone.utc),
+            now=datetime(2026, 11, 9, 15, 45, tzinfo=timezone.utc),
         )
         self.assertFalse(due)
         self.assertIn("not due until", reason)
@@ -89,6 +89,15 @@ premarket_time = 08:45
             "intraday",
             config(),
             now=datetime(2026, 11, 27, 18, 35, tzinfo=timezone.utc),
+        )
+        self.assertFalse(due)
+        self.assertIn("window ended", reason)
+
+    def test_intraday_does_not_repeat_last_slot_at_the_close(self) -> None:
+        due, reason, _ = should_run(
+            "intraday",
+            config(),
+            now=datetime(2026, 11, 27, 18, 0, tzinfo=timezone.utc),
         )
         self.assertFalse(due)
         self.assertIn("window ended", reason)

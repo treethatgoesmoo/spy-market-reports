@@ -31,7 +31,7 @@ from market_calendar import EASTERN, market_hours
 
 
 LOGGER = logging.getLogger("thetadata_report_generator")
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 DEFAULT_BASE_URL = "http://127.0.0.1:25503/v3"
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 
@@ -521,15 +521,311 @@ def _window_iso(value: datetime) -> str:
     return value.isoformat(timespec="seconds")
 
 
+def _resample_intraday_bars(
+    bars: Sequence[IntradayBar],
+    *,
+    interval_minutes: int,
+    session_open: datetime,
+) -> list[IntradayBar]:
+    if interval_minutes <= 0:
+        raise GeneratorError("resample interval must be positive")
+    if interval_minutes == 1:
+        return list(bars)
+
+    grouped: dict[datetime, list[IntradayBar]] = {}
+    for bar in bars:
+        offset_minutes = int((bar.timestamp - session_open).total_seconds() // 60)
+        bucket_start = session_open + timedelta(
+            minutes=(offset_minutes // interval_minutes) * interval_minutes
+        )
+        grouped.setdefault(bucket_start, []).append(bar)
+
+    result: list[IntradayBar] = []
+    for bucket_start, bucket in sorted(grouped.items()):
+        ordered = sorted(bucket, key=lambda item: item.timestamp)
+        expected_timestamps = [
+            bucket_start + timedelta(minutes=index)
+            for index in range(interval_minutes)
+        ]
+        if [item.timestamp for item in ordered] != expected_timestamps:
+            continue
+        total_volume = sum(item.volume for item in ordered)
+        divisor = sum(max(1, item.volume) for item in ordered)
+        weighted_vwap = sum(
+            item.vwap * max(1, item.volume) for item in ordered
+        ) / divisor
+        result.append(
+            IntradayBar(
+                timestamp=bucket_start,
+                open=ordered[0].open,
+                high=max(item.high for item in ordered),
+                low=min(item.low for item in ordered),
+                close=ordered[-1].close,
+                volume=total_volume,
+                vwap=weighted_vwap,
+            )
+        )
+    return result
+
+
+def _linear_trend_line(
+    bars: Sequence[IntradayBar],
+    *,
+    lookback_bars: int,
+    interval_minutes: int,
+    neutral_slope_pct: float,
+) -> dict[str, Any]:
+    window = list(bars[-min(lookback_bars, len(bars)) :])
+    if len(window) < 2:
+        raise GeneratorError(
+            f"need at least two {interval_minutes}-minute bars for a trend line"
+        )
+    values = [bar.close for bar in window]
+    x_mean = (len(values) - 1) / 2.0
+    y_mean = statistics.fmean(values)
+    denominator = sum((index - x_mean) ** 2 for index in range(len(values)))
+    slope = (
+        sum(
+            (index - x_mean) * (value - y_mean)
+            for index, value in enumerate(values)
+        )
+        / denominator
+    )
+    intercept = y_mean - slope * x_mean
+    fitted = [intercept + slope * index for index in range(len(values))]
+    total_variation = sum((value - y_mean) ** 2 for value in values)
+    residual_variation = sum(
+        (value - estimate) ** 2 for value, estimate in zip(values, fitted)
+    )
+    r_squared = (
+        1.0 - residual_variation / total_variation
+        if total_variation > 0
+        else 1.0
+    )
+    slope_pct = slope / y_mean * 100.0
+    direction = _direction_label(slope_pct, neutral_slope_pct)
+    return {
+        "method": "least_squares_close",
+        "lookback_bars": len(window),
+        "lookback_minutes": len(window) * interval_minutes,
+        "start_at": _window_iso(window[0].timestamp),
+        "end_at": _window_iso(
+            window[-1].timestamp + timedelta(minutes=interval_minutes)
+        ),
+        "start_price": _rounded(fitted[0]),
+        "end_price": _rounded(fitted[-1]),
+        "slope_points_per_bar": _rounded(slope, 6),
+        "slope_pct_per_bar": _rounded(slope_pct, 6),
+        "r_squared": _rounded(max(0.0, min(1.0, r_squared))),
+        "direction": direction,
+    }
+
+
+def _recent_volume_ratio(
+    bars: Sequence[IntradayBar],
+    window_bars: int = 5,
+) -> Optional[float]:
+    usable = min(window_bars, len(bars) // 2)
+    if usable < 2:
+        return None
+    recent = statistics.fmean(bar.volume for bar in bars[-usable:])
+    previous = statistics.fmean(bar.volume for bar in bars[-2 * usable : -usable])
+    return recent / previous if previous > 0 else None
+
+
+def _timeframe_analysis(
+    label: str,
+    bars: Sequence[IntradayBar],
+    *,
+    interval_minutes: int,
+    session_vwap: float,
+) -> dict[str, Any]:
+    settings = {
+        "1m": {
+            "fast": 9,
+            "slow": 21,
+            "momentum": 5,
+            "trend_lookback": 20,
+            "ema_threshold": 0.015,
+            "momentum_threshold": 0.04,
+            "slope_threshold": 0.005,
+        },
+        "5m": {
+            "fast": 6,
+            "slow": 12,
+            "momentum": 3,
+            "trend_lookback": 12,
+            "ema_threshold": 0.04,
+            "momentum_threshold": 0.10,
+            "slope_threshold": 0.02,
+        },
+        "15m": {
+            "fast": 3,
+            "slow": 5,
+            "momentum": 2,
+            "trend_lookback": 8,
+            "ema_threshold": 0.08,
+            "momentum_threshold": 0.18,
+            "slope_threshold": 0.04,
+        },
+    }[label]
+    if len(bars) < max(4, settings["slow"]):
+        raise GeneratorError(
+            f"need at least {max(4, settings['slow'])} completed {label} bars; "
+            f"received {len(bars)}"
+        )
+
+    closes = [bar.close for bar in bars]
+    fast_ema = _ema(closes, settings["fast"])
+    slow_ema = _ema(closes, settings["slow"])
+    ema_spread = _pct_change(fast_ema, slow_ema)
+    momentum = _momentum(closes, settings["momentum"])
+    rsi = _rsi(closes, 14)
+    price_vs_vwap = _pct_change(closes[-1], session_vwap)
+    volume_ratio = _recent_volume_ratio(bars)
+    trend_line = _linear_trend_line(
+        bars,
+        lookback_bars=settings["trend_lookback"],
+        interval_minutes=interval_minutes,
+        neutral_slope_pct=settings["slope_threshold"],
+    )
+
+    prior_window = list(bars[-min(settings["trend_lookback"], len(bars)) : -1])
+    if not prior_window:
+        prior_window = list(bars[-1:])
+    support = min(bar.low for bar in prior_window)
+    resistance = max(bar.high for bar in prior_window)
+    reference_price = closes[-1]
+    breakout = (
+        "above_resistance"
+        if reference_price > resistance
+        else "below_support"
+        if reference_price < support
+        else "inside_range"
+    )
+
+    signals: list[dict[str, Any]] = []
+    score = 0.0
+    ema_contribution = (
+        1.0
+        if ema_spread > settings["ema_threshold"]
+        else -1.0
+        if ema_spread < -settings["ema_threshold"]
+        else 0.0
+    )
+    score += _add_signal(
+        signals,
+        "ema_fast_vs_slow_pct",
+        ema_spread,
+        ema_contribution,
+        f"{label} fast EMA relative to slow EMA",
+    )
+    slope_value = float(trend_line["slope_pct_per_bar"])
+    slope_contribution = (
+        1.0
+        if slope_value > settings["slope_threshold"]
+        else -1.0
+        if slope_value < -settings["slope_threshold"]
+        else 0.0
+    )
+    score += _add_signal(
+        signals,
+        "trend_line_slope_pct_per_bar",
+        slope_value,
+        slope_contribution,
+        f"{label} least-squares close trend",
+    )
+    momentum_contribution = (
+        0.75
+        if momentum is not None and momentum > settings["momentum_threshold"]
+        else -0.75
+        if momentum is not None and momentum < -settings["momentum_threshold"]
+        else 0.0
+    )
+    score += _add_signal(
+        signals,
+        "momentum_pct",
+        momentum,
+        momentum_contribution,
+        f"{label} recent price momentum",
+    )
+    rsi_contribution = (
+        0.5
+        if rsi is not None and rsi >= 55
+        else -0.5
+        if rsi is not None and rsi <= 45
+        else 0.0
+    )
+    score += _add_signal(
+        signals,
+        "rsi14",
+        rsi,
+        rsi_contribution,
+        f"{label} RSI trend confirmation",
+    )
+    vwap_contribution = (
+        0.5
+        if price_vs_vwap > 0.05
+        else -0.5
+        if price_vs_vwap < -0.05
+        else 0.0
+    )
+    score += _add_signal(
+        signals,
+        "price_vs_session_vwap_pct",
+        price_vs_vwap,
+        vwap_contribution,
+        "Last completed one-minute close relative to session VWAP",
+    )
+
+    bias = "bullish" if score >= 1.25 else "bearish" if score <= -1.25 else "neutral"
+    volume_signal = (
+        "expanding"
+        if volume_ratio is not None and volume_ratio >= 1.20
+        else "contracting"
+        if volume_ratio is not None and volume_ratio <= 0.80
+        else "normal"
+    )
+    return {
+        "interval_minutes": interval_minutes,
+        "completed_bars": len(bars),
+        "bias": bias,
+        "score": round(score, 2),
+        "maximum_absolute_score": 3.75,
+        "trend_line": trend_line,
+        "support_resistance": {
+            "lookback_bars": len(prior_window),
+            "support": _rounded(support),
+            "resistance": _rounded(resistance),
+            "price_vs_support_pct": _rounded(_pct_change(reference_price, support)),
+            "price_vs_resistance_pct": _rounded(
+                _pct_change(reference_price, resistance)
+            ),
+            "breakout_state": breakout,
+        },
+        "indicators": {
+            "ema_fast": _rounded(fast_ema),
+            "ema_slow": _rounded(slow_ema),
+            "ema_fast_vs_slow_pct": _rounded(ema_spread),
+            "rsi14": _rounded(rsi),
+            "momentum_pct": _rounded(momentum),
+            "price_vs_session_vwap_pct": _rounded(price_vs_vwap),
+            "recent_volume_ratio": _rounded(volume_ratio),
+            "volume_signal": volume_signal,
+        },
+        "signals": signals,
+    }
+
+
 def build_intraday_report(
     *,
     trading_date: date,
     generated_at: datetime,
     stock_rows: Sequence[Mapping[str, Any]],
-    interval_minutes: int = 5,
+    interval_minutes: int = 1,
 ) -> dict[str, Any]:
-    if interval_minutes != 5:
-        raise GeneratorError("intraday reports currently require five-minute bars")
+    if interval_minutes != 1:
+        raise GeneratorError("intraday reports require one-minute source bars")
     if generated_at.tzinfo is None or generated_at.utcoffset() is None:
         raise GeneratorError("generated_at must be timezone-aware")
     hours = market_hours(trading_date)
@@ -538,9 +834,9 @@ def build_intraday_report(
     generated_eastern = generated_at.astimezone(EASTERN)
     if generated_eastern.date() != trading_date:
         raise GeneratorError("intraday generated_at must resolve to trading_date")
-    if not (hours.open_at + timedelta(minutes=60) <= generated_eastern < hours.close_at):
+    if not (hours.open_at + timedelta(minutes=80) <= generated_eastern < hours.close_at):
         raise GeneratorError(
-            "intraday report must be generated at least 60 minutes after the open "
+            "intraday report must be generated at least 80 minutes after the open "
             "and before the close"
         )
 
@@ -550,18 +846,34 @@ def build_intraday_report(
         generated_at=generated_at,
         interval_minutes=interval_minutes,
     )
-    bars = _intraday_bars(completed, trading_date)
-    bars_per_hour = 60 // interval_minutes
-    if len(bars) < bars_per_hour:
+    one_minute_bars = _intraday_bars(completed, trading_date)
+    if len(one_minute_bars) < 80:
         raise GeneratorError(
-            f"need at least {bars_per_hour} completed intraday bars; received {len(bars)}"
+            "need at least 80 completed one-minute intraday bars; "
+            f"received {len(one_minute_bars)}"
         )
 
-    last_bar_end = bars[-1].timestamp + timedelta(minutes=interval_minutes)
-    if generated_eastern - last_bar_end > timedelta(minutes=interval_minutes + 2):
+    last_bar_end = one_minute_bars[-1].timestamp + timedelta(minutes=1)
+    if generated_eastern - last_bar_end > timedelta(minutes=3):
         raise GeneratorError(
             f"latest completed bar ended at {last_bar_end.isoformat()}, too stale for "
             f"an intraday report generated at {generated_eastern.isoformat()}"
+        )
+
+    five_minute_bars = _resample_intraday_bars(
+        one_minute_bars,
+        interval_minutes=5,
+        session_open=hours.open_at,
+    )
+    fifteen_minute_bars = _resample_intraday_bars(
+        one_minute_bars,
+        interval_minutes=15,
+        session_open=hours.open_at,
+    )
+    if len(fifteen_minute_bars) < 5:
+        raise GeneratorError(
+            "need at least five complete 15-minute bars for multi-timeframe analysis; "
+            f"received {len(fifteen_minute_bars)}"
         )
 
     daily = aggregate_stock_rows(completed)
@@ -569,83 +881,103 @@ def build_intraday_report(
         raise GeneratorError(f"SPY intraday data does not reach {trading_date}")
     current = daily[-1]
     previous_close = daily[-2].close if len(daily) >= 2 else None
-    closes = [bar.close for bar in bars]
-    ema6 = _ema(closes, min(6, len(closes)))
-    ema12 = _ema(closes, min(12, len(closes)))
-    momentum15 = _momentum(closes, 3)
-    momentum30 = _momentum(closes, 6)
-    momentum60 = _momentum(closes, bars_per_hour)
-    total_volume = sum(bar.volume for bar in bars)
+    total_volume = sum(bar.volume for bar in one_minute_bars)
     session_vwap = (
-        sum(bar.vwap * max(1, bar.volume) for bar in bars)
-        / sum(max(1, bar.volume) for bar in bars)
+        sum(bar.vwap * max(1, bar.volume) for bar in one_minute_bars)
+        / sum(max(1, bar.volume) for bar in one_minute_bars)
     )
-    price_vs_vwap = _pct_change(bars[-1].close, session_vwap)
-    ema_spread = _pct_change(ema6, ema12)
+    reference_price = one_minute_bars[-1].close
+    price_vs_vwap = _pct_change(reference_price, session_vwap)
+    timeframe_analysis = {
+        "1m": _timeframe_analysis(
+            "1m",
+            one_minute_bars,
+            interval_minutes=1,
+            session_vwap=session_vwap,
+        ),
+        "5m": _timeframe_analysis(
+            "5m",
+            five_minute_bars,
+            interval_minutes=5,
+            session_vwap=session_vwap,
+        ),
+        "15m": _timeframe_analysis(
+            "15m",
+            fifteen_minute_bars,
+            interval_minutes=15,
+            session_vwap=session_vwap,
+        ),
+    }
+    bullish_timeframes = [
+        label
+        for label, analysis in timeframe_analysis.items()
+        if analysis["bias"] == "bullish"
+    ]
+    bearish_timeframes = [
+        label
+        for label, analysis in timeframe_analysis.items()
+        if analysis["bias"] == "bearish"
+    ]
+    neutral_timeframes = [
+        label
+        for label, analysis in timeframe_analysis.items()
+        if analysis["bias"] == "neutral"
+    ]
+    weights = {"1m": 0.25, "5m": 0.35, "15m": 0.40}
+    consensus_score = sum(
+        weights[label]
+        * float(analysis["score"])
+        / float(analysis["maximum_absolute_score"])
+        for label, analysis in timeframe_analysis.items()
+    )
+    if (
+        len(bullish_timeframes) >= 2
+        and timeframe_analysis["15m"]["bias"] != "bearish"
+        and price_vs_vwap >= 0
+    ):
+        bias = "bullish"
+    elif (
+        len(bearish_timeframes) >= 2
+        and timeframe_analysis["15m"]["bias"] != "bullish"
+        and price_vs_vwap <= 0
+    ):
+        bias = "bearish"
+    else:
+        bias = "neutral"
+    agreement_ratio = max(
+        len(bullish_timeframes), len(bearish_timeframes), len(neutral_timeframes)
+    ) / 3.0
+    signal_strength = min(
+        1.0,
+        abs(consensus_score) * (0.75 + 0.25 * agreement_ratio),
+    )
+    if bias == "neutral":
+        signal_strength = min(signal_strength, 0.49)
+    one_minute_volume_ratio = _recent_volume_ratio(one_minute_bars)
+    if one_minute_volume_ratio is not None and one_minute_volume_ratio < 0.80:
+        signal_strength *= 0.85
 
-    signals: list[dict[str, Any]] = []
-    score = 0.0
-    contribution = 1.0 if ema_spread > 0.05 else -1.0 if ema_spread < -0.05 else 0.0
-    score += _add_signal(
-        signals,
-        "ema6_vs_ema12_5m",
-        ema_spread,
-        contribution,
-        "Short intraday trend using completed five-minute bars",
-    )
-    contribution = (
-        1.0
-        if momentum30 is not None and momentum30 > 0.15
-        else -1.0
-        if momentum30 is not None and momentum30 < -0.15
-        else 0.0
-    )
-    score += _add_signal(
-        signals,
-        "momentum_30m_pct",
-        momentum30,
-        contribution,
-        "Thirty-minute price momentum",
-    )
-    contribution = 0.75 if price_vs_vwap > 0.10 else -0.75 if price_vs_vwap < -0.10 else 0.0
-    score += _add_signal(
-        signals,
-        "price_vs_session_vwap_pct",
-        price_vs_vwap,
-        contribution,
-        "Last completed-bar close relative to Nasdaq Basic session VWAP",
-    )
-    contribution = (
-        0.5
-        if momentum15 is not None and momentum15 > 0.08
-        else -0.5
-        if momentum15 is not None and momentum15 < -0.08
-        else 0.0
-    )
-    score += _add_signal(
-        signals,
-        "momentum_15m_pct",
-        momentum15,
-        contribution,
-        "Fifteen-minute price momentum",
-    )
-
-    bias = "bullish" if score >= 1.25 else "bearish" if score <= -1.25 else "neutral"
-    signal_strength = min(1.0, abs(score) / 3.25)
     window_start = last_bar_end
-    window_end = min(window_start + timedelta(hours=1), hours.close_at)
+    window_end = min(window_start + timedelta(minutes=15), hours.close_at)
     duration_minutes = int((window_end - window_start).total_seconds() // 60)
-    expected_bars = int((last_bar_end - hours.open_at).total_seconds() // 60) // interval_minutes
-    completeness = min(1.0, len(bars) / max(1, expected_bars))
+    expected_bars = int((last_bar_end - hours.open_at).total_seconds() // 60)
+    completeness = min(1.0, len(one_minute_bars) / max(1, expected_bars))
     if completeness < 0.80:
         raise GeneratorError(
             f"intraday bar completeness is only {completeness:.0%}; refusing to forecast"
         )
+    conflict = bool(bullish_timeframes and bearish_timeframes)
     rationale = [
-        f"{item['name']} contributed {item['contribution']:+g}"
-        for item in signals
-        if item["contribution"] != 0
-    ] or ["No configured short-horizon signal crossed its threshold"]
+        f"{label} timeframe is {analysis['bias']} with a "
+        f"{analysis['trend_line']['direction']} regression trend"
+        for label, analysis in timeframe_analysis.items()
+    ]
+    rationale.append(
+        f"Price is {'above' if price_vs_vwap > 0 else 'below' if price_vs_vwap < 0 else 'at'} "
+        f"session VWAP by {abs(price_vs_vwap):.2f}%"
+    )
+    if conflict:
+        rationale.append("Timeframes conflict, so the consensus rule reduces conviction")
 
     return {
         "symbol": "SPY",
@@ -661,31 +993,61 @@ def build_intraday_report(
         "data_through": trading_date.isoformat(),
         "market": {
             "as_of": _window_iso(last_bar_end),
-            "last_completed_bar_start": _window_iso(bars[-1].timestamp),
-            "reference_price": _rounded(bars[-1].close),
+            "last_completed_bar_start": _window_iso(one_minute_bars[-1].timestamp),
+            "reference_price": _rounded(reference_price),
             "session_open": _rounded(current.open),
             "session_high": _rounded(current.high),
             "session_low": _rounded(current.low),
             "session_vwap": _rounded(session_vwap),
             "session_volume_nasdaq_basic": total_volume,
-            "open_to_current_pct": _rounded(_pct_change(bars[-1].close, current.open)),
+            "open_to_current_pct": _rounded(_pct_change(reference_price, current.open)),
             "previous_close_to_current_pct": (
-                _rounded(_pct_change(bars[-1].close, previous_close))
+                _rounded(_pct_change(reference_price, previous_close))
                 if previous_close is not None
                 else None
             ),
         },
         "analysis": {
-            "method": "transparent-intraday-rule-score-v1",
-            "score": round(score, 2),
-            "maximum_absolute_score": 3.25,
-            "signals": signals,
+            "method": "transparent-multitimeframe-rule-score-v1",
+            "consensus_score": round(consensus_score, 2),
+            "timeframe_weights": weights,
+            "agreement": {
+                "bullish_timeframes": bullish_timeframes,
+                "bearish_timeframes": bearish_timeframes,
+                "neutral_timeframes": neutral_timeframes,
+                "agreement_ratio": round(agreement_ratio, 2),
+                "conflict": conflict,
+            },
+            "timeframes": timeframe_analysis,
+            "market_signals": [
+                {
+                    "name": "timeframe_consensus",
+                    "value": round(consensus_score, 2),
+                    "state": bias,
+                },
+                {
+                    "name": "price_vs_session_vwap_pct",
+                    "value": _rounded(price_vs_vwap),
+                    "state": (
+                        "above" if price_vs_vwap > 0.05 else
+                        "below" if price_vs_vwap < -0.05 else "near"
+                    ),
+                },
+                {
+                    "name": "one_minute_volume_ratio",
+                    "value": _rounded(one_minute_volume_ratio),
+                    "state": (
+                        "expanding"
+                        if one_minute_volume_ratio is not None
+                        and one_minute_volume_ratio >= 1.20
+                        else "contracting"
+                        if one_minute_volume_ratio is not None
+                        and one_minute_volume_ratio <= 0.80
+                        else "normal"
+                    ),
+                },
+            ],
             "indicators": {
-                "ema6_5m": _rounded(ema6),
-                "ema12_5m": _rounded(ema12),
-                "momentum_15m_pct": _rounded(momentum15),
-                "momentum_30m_pct": _rounded(momentum30),
-                "momentum_60m_pct": _rounded(momentum60),
                 "price_vs_session_vwap_pct": _rounded(price_vs_vwap),
             },
         },
@@ -694,19 +1056,23 @@ def build_intraday_report(
             "bias": bias,
             "signal_strength": round(signal_strength, 2),
             "calibrated_probability": None,
-            "horizon": "next_market_interval",
+            "horizon": "next_15_minutes",
             "window_start": _window_iso(window_start),
             "window_end": _window_iso(window_end),
             "duration_minutes": duration_minutes,
-            "target": "window-end SPY price versus reference_price",
-            "reference_price": _rounded(bars[-1].close),
+            "target": "15-minute window-end SPY price versus reference_price",
+            "reference_price": _rounded(reference_price),
             "rationale": rationale,
         },
         "data_quality": {
             "feed": "Nasdaq Basic",
             "coverage": "not consolidated UTP/CTA",
-            "completed_bars": len(bars),
-            "interval_minutes": interval_minutes,
+            "source_interval_minutes": 1,
+            "completed_bars": {
+                "1m": len(one_minute_bars),
+                "5m": len(five_minute_bars),
+                "15m": len(fifteen_minute_bars),
+            },
             "completeness": round(completeness, 2),
             "inputs": ["SPY stock OHLC (Nasdaq Basic)"],
         },
@@ -724,7 +1090,7 @@ def build_report(
     trading_date: date,
     generated_at: datetime,
     stock_rows: Sequence[Mapping[str, Any]],
-    interval_minutes: int = 5,
+    interval_minutes: int = 1,
 ) -> dict[str, Any]:
     if session == "intraday":
         return build_intraday_report(
@@ -958,7 +1324,7 @@ def generate_report(
     *,
     session: str,
     trading_date: date,
-    interval: str,
+    interval: Optional[str],
     venue: str,
     lookback_calendar_days: int,
     generated_at: Optional[datetime] = None,
@@ -969,19 +1335,46 @@ def generate_report(
         raise GeneratorError(f"{trading_date} is not a regular US equities trading day")
     if session not in {"premarket", "intraday", "postmarket"}:
         raise GeneratorError("session must be premarket, intraday, or postmarket")
-    data_end = _previous_trading_day(trading_date) if session == "premarket" else trading_date
-    data_start = data_end - timedelta(days=lookback_calendar_days - 1)
-    LOGGER.info("requesting SPY data from %s through %s", data_start, data_end)
-    stock_rows = client.stock_ohlc(
-        "SPY", data_start, data_end, interval=interval, venue=venue
-    )
+    if session == "intraday":
+        if interval is not None and interval != "1m":
+            raise GeneratorError("intraday reports require --interval 1m")
+        previous_day = _previous_trading_day(trading_date)
+        LOGGER.info(
+            "requesting SPY previous-session data for %s and one-minute data for %s",
+            previous_day,
+            trading_date,
+        )
+        stock_rows = client.stock_ohlc(
+            "SPY", previous_day, previous_day, interval="5m", venue=venue
+        )
+        stock_rows += client.stock_ohlc(
+            "SPY", trading_date, trading_date, interval="1m", venue=venue
+        )
+        interval_minutes = 1
+    else:
+        requested_interval = interval or "5m"
+        data_end = (
+            _previous_trading_day(trading_date)
+            if session == "premarket"
+            else trading_date
+        )
+        data_start = data_end - timedelta(days=lookback_calendar_days - 1)
+        LOGGER.info("requesting SPY data from %s through %s", data_start, data_end)
+        stock_rows = client.stock_ohlc(
+            "SPY",
+            data_start,
+            data_end,
+            interval=requested_interval,
+            venue=venue,
+        )
+        interval_minutes = 5
     generated = generated_at or datetime.now(timezone.utc)
     return build_report(
         session=session,
         trading_date=trading_date,
         generated_at=generated,
         stock_rows=stock_rows,
-        interval_minutes=_interval_minutes(interval) if session == "intraday" else 5,
+        interval_minutes=interval_minutes,
     )
 
 
@@ -1040,7 +1433,11 @@ def _parser() -> argparse.ArgumentParser:
         "--base-url",
         default=os.environ.get("THETADATA_BASE_URL", DEFAULT_BASE_URL),
     )
-    parser.add_argument("--interval", default="5m")
+    parser.add_argument(
+        "--interval",
+        choices=("1m", "5m", "15m", "1h"),
+        help="optional override; intraday reports require 1m (the default for that session)",
+    )
     parser.add_argument("--venue", choices=("nqb", "utp_cta"), default="nqb")
     parser.add_argument("--lookback-calendar-days", type=int, default=30)
     parser.add_argument("--timeout-seconds", type=float, default=30.0)

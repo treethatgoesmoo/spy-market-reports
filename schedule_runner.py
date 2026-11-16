@@ -161,7 +161,7 @@ def due_time(
     if session == "intraday":
         if hours.open_at is None:
             return None
-        return hours.open_at + timedelta(minutes=65)
+        return hours.open_at + timedelta(minutes=80)
     if session == "postmarket":
         return hours.close_at + timedelta(minutes=30)
     raise ConfigurationError(f"unsupported session: {session!r}")
@@ -175,10 +175,10 @@ def intraday_due_times(
     if not hours.is_open or hours.open_at is None or hours.close_at is None:
         return []
     result: list[datetime] = []
-    cursor = hours.open_at + timedelta(minutes=65)
+    cursor = hours.open_at + timedelta(minutes=80)
     while cursor < hours.close_at:
         result.append(cursor)
-        cursor += timedelta(hours=1)
+        cursor += timedelta(minutes=5)
     return result
 
 
@@ -208,11 +208,15 @@ def should_run(
             )
         due = eligible[-1]
         delta = now_eastern - due
-        if delta > timedelta(minutes=config.due_tolerance_minutes):
+        intraday_tolerance = min(
+            timedelta(minutes=config.due_tolerance_minutes),
+            timedelta(minutes=4),
+        )
+        if delta > intraday_tolerance:
             return (
                 False,
                 f"intraday due window ended at "
-                f"{(due + timedelta(minutes=config.due_tolerance_minutes)).isoformat()}",
+                f"{(due + intraday_tolerance).isoformat()}",
                 trading_date,
             )
         return True, f"intraday due at {due.isoformat()}", trading_date

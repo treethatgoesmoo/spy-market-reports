@@ -53,11 +53,11 @@ class ValidationTests(unittest.TestCase):
                 now=datetime(2026, 11, 6, 21, 35, tzinfo=timezone.utc),
             )
 
-    def test_valid_intraday_next_hour(self) -> None:
+    def test_valid_intraday_next_fifteen_minutes(self) -> None:
         metadata = validate_report(
             fixture("valid_intraday.json"),
             expected_session="intraday",
-            now=datetime(2026, 11, 9, 15, 36, tzinfo=timezone.utc),
+            now=datetime(2026, 11, 9, 15, 51, tzinfo=timezone.utc),
         )
         self.assertEqual(metadata.session, "intraday")
 
@@ -68,14 +68,24 @@ class ValidationTests(unittest.TestCase):
             validate_report(
                 report,
                 expected_session="intraday",
-                now=datetime(2026, 11, 9, 15, 36, tzinfo=timezone.utc),
+                now=datetime(2026, 11, 9, 15, 51, tzinfo=timezone.utc),
+            )
+
+    def test_intraday_requires_all_three_timeframes(self) -> None:
+        report = deepcopy(fixture("valid_intraday.json"))
+        del report["analysis"]["timeframes"]["15m"]
+        with self.assertRaisesRegex(ValidationError, "timeframes.15m"):
+            validate_report(
+                report,
+                expected_session="intraday",
+                now=datetime(2026, 11, 9, 15, 51, tzinfo=timezone.utc),
             )
 
     def test_intraday_window_cannot_cross_close(self) -> None:
         report = deepcopy(fixture("valid_intraday.json"))
         report["generated_at"] = "2026-11-09T20:35:00Z"
         report["forecast"]["window_start"] = "2026-11-09T15:35:00-05:00"
-        report["forecast"]["window_end"] = "2026-11-09T16:35:00-05:00"
+        report["forecast"]["window_end"] = "2026-11-09T16:05:00-05:00"
         with self.assertRaisesRegex(ValidationError, "end by the close"):
             validate_report(
                 report,

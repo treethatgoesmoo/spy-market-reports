@@ -103,9 +103,9 @@ def bullish_rebound_in_bearish_trend_rows(days: list[date]) -> list[dict]:
 def intraday_rows(day: date) -> list[dict]:
     rows: list[dict] = []
     start = datetime.combine(day, datetime.min.time()).replace(hour=9, minute=30)
-    for index in range(13):
-        timestamp = start + timedelta(minutes=5 * index)
-        base = 739.0 + index * 0.08
+    for index in range(80):
+        timestamp = start + timedelta(minutes=index)
+        base = 739.0 + index * 0.025
         rows.append(
             {
                 "timestamp": timestamp.isoformat(timespec="milliseconds"),
@@ -113,7 +113,7 @@ def intraday_rows(day: date) -> list[dict]:
                 "high": base + 0.18,
                 "low": base - 0.10,
                 "close": base + 0.10,
-                "volume": 100_000 + index * 1_000,
+                "volume": 20_000 + index * 100,
                 "count": 100,
                 "vwap": base + 0.06,
             }
@@ -137,6 +137,52 @@ class FakeResponse:
 
 
 class GeneratorTests(unittest.TestCase):
+    def test_intraday_fetches_one_minute_current_session_once(self) -> None:
+        trading_date = date(2026, 11, 9)
+        previous_day = date(2026, 11, 6)
+
+        class RecordingClient:
+            def __init__(self) -> None:
+                self.calls: list[tuple[date, date, str, str]] = []
+
+            def stock_ohlc(self, symbol, start, end, *, interval, venue):
+                self.calls.append((start, end, interval, venue))
+                if start == trading_date:
+                    return intraday_rows(trading_date)
+                return stock_rows([previous_day])
+
+        client = RecordingClient()
+        report = generator.generate_report(
+            client,
+            session="intraday",
+            trading_date=trading_date,
+            interval=None,
+            venue="nqb",
+            lookback_calendar_days=30,
+            generated_at=datetime(2026, 11, 9, 15, 50, 20, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(
+            client.calls,
+            [
+                (previous_day, previous_day, "5m", "nqb"),
+                (trading_date, trading_date, "1m", "nqb"),
+            ],
+        )
+        self.assertEqual(report["data_quality"]["completed_bars"]["1m"], 80)
+
+    def test_intraday_rejects_non_one_minute_source_override(self) -> None:
+        with self.assertRaisesRegex(GeneratorError, "require --interval 1m"):
+            generator.generate_report(
+                object(),
+                session="intraday",
+                trading_date=date(2026, 11, 9),
+                interval="5m",
+                venue="nqb",
+                lookback_calendar_days=30,
+                generated_at=datetime(2026, 11, 9, 15, 50, tzinfo=timezone.utc),
+            )
+
     def test_builds_publishable_premarket_report(self) -> None:
         days = trading_days_ending(date(2026, 11, 5), 22)
         generated = datetime(2026, 11, 6, 13, 45, tzinfo=timezone.utc)
@@ -211,10 +257,10 @@ class GeneratorTests(unittest.TestCase):
             now=generated + timedelta(minutes=1),
         )
 
-    def test_builds_publishable_intraday_next_hour_report(self) -> None:
+    def test_builds_publishable_multitimeframe_intraday_report(self) -> None:
         trading_date = date(2026, 11, 9)
         prior_days = trading_days_ending(date(2026, 11, 6), 21)
-        generated = datetime(2026, 11, 9, 15, 35, 20, tzinfo=timezone.utc)
+        generated = datetime(2026, 11, 9, 15, 50, 20, tzinfo=timezone.utc)
         report = build_report(
             session="intraday",
             trading_date=trading_date,
@@ -222,12 +268,18 @@ class GeneratorTests(unittest.TestCase):
             stock_rows=stock_rows(prior_days) + intraday_rows(trading_date),
         )
         self.assertEqual(report["session"], "intraday")
-        self.assertEqual(report["forecast"]["horizon"], "next_market_interval")
-        self.assertEqual(report["forecast"]["duration_minutes"], 60)
+        self.assertEqual(report["forecast"]["horizon"], "next_15_minutes")
+        self.assertEqual(report["forecast"]["duration_minutes"], 15)
         self.assertIn("signal_strength", report["forecast"])
         self.assertNotIn("confidence", report["forecast"])
         self.assertIsNone(report["forecast"]["calibrated_probability"])
         self.assertEqual(report["data_quality"]["feed"], "Nasdaq Basic")
+        self.assertEqual(report["data_quality"]["source_interval_minutes"], 1)
+        self.assertEqual(set(report["analysis"]["timeframes"]), {"1m", "5m", "15m"})
+        for timeframe in report["analysis"]["timeframes"].values():
+            self.assertIn("trend_line", timeframe)
+            self.assertIn("support_resistance", timeframe)
+            self.assertIn("signals", timeframe)
         validate_report(
             report,
             expected_session="intraday",
@@ -240,7 +292,7 @@ class GeneratorTests(unittest.TestCase):
         rows = stock_rows(prior_days) + intraday_rows(trading_date)
         rows.append(
             {
-                "timestamp": "2026-11-09T10:35:00.000",
+                "timestamp": "2026-11-09T10:50:00.000",
                 "open": 0,
                 "high": 742,
                 "low": 741,
@@ -253,12 +305,12 @@ class GeneratorTests(unittest.TestCase):
         report = build_report(
             session="intraday",
             trading_date=trading_date,
-            generated_at=datetime(2026, 11, 9, 15, 35, 20, tzinfo=timezone.utc),
+            generated_at=datetime(2026, 11, 9, 15, 50, 20, tzinfo=timezone.utc),
             stock_rows=rows,
         )
         self.assertEqual(
             report["market"]["last_completed_bar_start"],
-            "2026-11-09T10:30:00-05:00",
+            "2026-11-09T10:49:00-05:00",
         )
 
     def test_all_zero_no_trade_placeholder_bar_is_ignored(self) -> None:

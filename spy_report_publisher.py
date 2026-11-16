@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import logging.handlers
+import math
 import os
 import re
 import shutil
@@ -291,10 +292,10 @@ def validate_report(
                 "premarket generated_at must be between 04:00 ET and the 09:30 ET open"
             )
     elif metadata.session == "intraday":
-        earliest = hours.open_at + timedelta(minutes=60)
+        earliest = hours.open_at + timedelta(minutes=80)
         if not (earliest <= generated_eastern < hours.close_at):
             raise ValidationError(
-                "intraday generated_at must be at least 60 minutes after the open "
+                "intraday generated_at must be at least 80 minutes after the open "
                 "and before the close"
             )
         forecast = report.get("forecast")
@@ -302,8 +303,12 @@ def validate_report(
             raise ValidationError("intraday forecast must be an object")
         if forecast.get("is_directional_forecast") is not True:
             raise ValidationError("intraday forecast must be explicitly directional")
-        if forecast.get("horizon") != "next_market_interval":
-            raise ValidationError("intraday forecast horizon must be next_market_interval")
+        if forecast.get("bias") not in DIRECTION_VALUES:
+            raise ValidationError(
+                "intraday forecast bias must be bullish, bearish, or neutral"
+            )
+        if forecast.get("horizon") != "next_15_minutes":
+            raise ValidationError("intraday forecast horizon must be next_15_minutes")
         if "confidence" in forecast:
             raise ValidationError(
                 "intraday forecast must use signal_strength, not uncalibrated confidence"
@@ -330,16 +335,73 @@ def validate_report(
         if not (
             window_start_eastern.date() == metadata.trading_date
             and window_start_eastern < window_end_eastern <= hours.close_at
-            and window_end_eastern - window_start_eastern <= timedelta(hours=1)
+            and window_end_eastern - window_start_eastern <= timedelta(minutes=15)
         ):
             raise ValidationError(
                 "intraday forecast window must remain on trading_date, end by the close, "
-                "and be no longer than 60 minutes"
+                "and be no longer than 15 minutes"
             )
         duration = forecast.get("duration_minutes")
         actual_minutes = int((window_end - window_start).total_seconds() // 60)
         if isinstance(duration, bool) or not isinstance(duration, int) or duration != actual_minutes:
             raise ValidationError("intraday duration_minutes does not match its forecast window")
+
+        analysis = report.get("analysis")
+        if not isinstance(analysis, dict):
+            raise ValidationError("intraday analysis must be an object")
+        timeframes = analysis.get("timeframes")
+        if not isinstance(timeframes, dict):
+            raise ValidationError("intraday analysis.timeframes must be an object")
+        for label, expected_minutes in (("1m", 1), ("5m", 5), ("15m", 15)):
+            timeframe = timeframes.get(label)
+            if not isinstance(timeframe, dict):
+                raise ValidationError(f"intraday analysis.timeframes.{label} is required")
+            if timeframe.get("bias") not in DIRECTION_VALUES:
+                raise ValidationError(
+                    f"intraday analysis.timeframes.{label}.bias is invalid"
+                )
+            if timeframe.get("interval_minutes") != expected_minutes:
+                raise ValidationError(
+                    f"intraday analysis.timeframes.{label}.interval_minutes must be "
+                    f"{expected_minutes}"
+                )
+            trend_line = timeframe.get("trend_line")
+            if not isinstance(trend_line, dict):
+                raise ValidationError(
+                    f"intraday analysis.timeframes.{label}.trend_line is required"
+                )
+            slope = trend_line.get("slope_pct_per_bar")
+            if (
+                isinstance(slope, bool)
+                or not isinstance(slope, (int, float))
+                or not math.isfinite(float(slope))
+            ):
+                raise ValidationError(
+                    f"intraday analysis.timeframes.{label} trend-line slope is invalid"
+                )
+            levels = timeframe.get("support_resistance")
+            if not isinstance(levels, dict):
+                raise ValidationError(
+                    f"intraday analysis.timeframes.{label}.support_resistance is required"
+                )
+            for level_name in ("support", "resistance"):
+                value = levels.get(level_name)
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
+                    or float(value) <= 0
+                ):
+                    raise ValidationError(
+                        f"intraday analysis.timeframes.{label}.{level_name} is invalid"
+                    )
+        data_quality = report.get("data_quality")
+        if not isinstance(data_quality, dict):
+            raise ValidationError("intraday data_quality must be an object")
+        if data_quality.get("source_interval_minutes") != 1:
+            raise ValidationError(
+                "intraday data_quality.source_interval_minutes must be 1"
+            )
     else:
         earliest = hours.close_at + timedelta(
             minutes=max(0, 30 - postmarket_tolerance_minutes)

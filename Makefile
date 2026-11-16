@@ -232,6 +232,7 @@ finish: verify-auth clone-repo verify-config check-thetadata enable-timers ## Ve
 	@echo 'SPY report publisher setup is complete.'
 
 update: install-files install-systemd ## Update code and unit files while preserving config and credentials.
+	$(SUDO) systemctl try-restart $(TIMERS)
 	@echo 'Publisher code updated. Existing configuration and deploy key were preserved.'
 
 clear-failures: ## Clear retained failed status for publisher services without deleting logs.
