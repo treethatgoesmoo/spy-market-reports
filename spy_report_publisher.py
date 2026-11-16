@@ -379,6 +379,51 @@ def validate_report(
                 raise ValidationError(
                     f"intraday analysis.timeframes.{label} trend-line slope is invalid"
                 )
+            candlestick = timeframe.get("candlestick_analysis")
+            if not isinstance(candlestick, dict):
+                raise ValidationError(
+                    f"intraday analysis.timeframes.{label}.candlestick_analysis "
+                    "is required"
+                )
+            if candlestick.get("bias") not in DIRECTION_VALUES:
+                raise ValidationError(
+                    f"intraday analysis.timeframes.{label} candlestick bias is invalid"
+                )
+            pattern_score = candlestick.get("score")
+            if (
+                isinstance(pattern_score, bool)
+                or not isinstance(pattern_score, (int, float))
+                or not math.isfinite(float(pattern_score))
+                or not -1 <= float(pattern_score) <= 1
+            ):
+                raise ValidationError(
+                    f"intraday analysis.timeframes.{label} candlestick score is invalid"
+                )
+            patterns = candlestick.get("patterns")
+            if not isinstance(patterns, list):
+                raise ValidationError(
+                    f"intraday analysis.timeframes.{label} candlestick patterns "
+                    "must be a list"
+                )
+            for pattern in patterns:
+                if (
+                    not isinstance(pattern, dict)
+                    or not isinstance(pattern.get("name"), str)
+                    or not pattern["name"]
+                    or pattern.get("bias") not in DIRECTION_VALUES
+                ):
+                    raise ValidationError(
+                        f"intraday analysis.timeframes.{label} has an invalid "
+                        "candlestick pattern"
+                    )
+            last_candle = candlestick.get("last_candle")
+            if (
+                not isinstance(last_candle, dict)
+                or last_candle.get("direction") not in DIRECTION_VALUES
+            ):
+                raise ValidationError(
+                    f"intraday analysis.timeframes.{label}.last_candle is invalid"
+                )
             levels = timeframe.get("support_resistance")
             if not isinstance(levels, dict):
                 raise ValidationError(
@@ -395,6 +440,12 @@ def validate_report(
                     raise ValidationError(
                         f"intraday analysis.timeframes.{label}.{level_name} is invalid"
                     )
+        candlestick_consensus = analysis.get("candlestick_consensus")
+        if (
+            not isinstance(candlestick_consensus, dict)
+            or candlestick_consensus.get("bias") not in DIRECTION_VALUES
+        ):
+            raise ValidationError("intraday candlestick_consensus is invalid")
         data_quality = report.get("data_quality")
         if not isinstance(data_quality, dict):
             raise ValidationError("intraday data_quality must be an object")

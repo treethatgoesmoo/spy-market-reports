@@ -27,24 +27,47 @@
     ]
   },
   "analysis": {
-    "method": "transparent-multitimeframe-rule-score-v1",
+    "method": "transparent-multitimeframe-rule-score-v2",
+    "candlestick_consensus": {
+      "bias": "neutral",
+      "score": 0.0,
+      "patterns_by_timeframe": {"1m": [], "5m": [], "15m": []}
+    },
     "timeframes": {
       "1m": {
         "interval_minutes": 1,
         "bias": "neutral",
         "trend_line": {"slope_pct_per_bar": 0.001},
+        "candlestick_analysis": {
+          "bias": "neutral",
+          "score": 0.0,
+          "patterns": [],
+          "last_candle": {"direction": "neutral"}
+        },
         "support_resistance": {"support": 738.0, "resistance": 741.0}
       },
       "5m": {
         "interval_minutes": 5,
         "bias": "neutral",
         "trend_line": {"slope_pct_per_bar": 0.002},
+        "candlestick_analysis": {
+          "bias": "neutral",
+          "score": 0.0,
+          "patterns": [],
+          "last_candle": {"direction": "neutral"}
+        },
         "support_resistance": {"support": 737.5, "resistance": 741.5}
       },
       "15m": {
         "interval_minutes": 15,
         "bias": "neutral",
         "trend_line": {"slope_pct_per_bar": 0.003},
+        "candlestick_analysis": {
+          "bias": "neutral",
+          "score": 0.0,
+          "patterns": [],
+          "last_candle": {"direction": "neutral"}
+        },
         "support_resistance": {"support": 736.0, "resistance": 742.0}
       }
     }

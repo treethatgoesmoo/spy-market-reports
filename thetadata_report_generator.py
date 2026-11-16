@@ -31,7 +31,7 @@ from market_calendar import EASTERN, market_hours
 
 
 LOGGER = logging.getLogger("thetadata_report_generator")
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 DEFAULT_BASE_URL = "http://127.0.0.1:25503/v3"
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 
@@ -633,6 +633,369 @@ def _recent_volume_ratio(
     return recent / previous if previous > 0 else None
 
 
+def _candle_metrics(bar: IntradayBar) -> dict[str, Any]:
+    candle_range = max(bar.high - bar.low, 1e-9)
+    body = abs(bar.close - bar.open)
+    body_high = max(bar.open, bar.close)
+    body_low = min(bar.open, bar.close)
+    return {
+        "direction": (
+            "bullish" if bar.close > bar.open else
+            "bearish" if bar.close < bar.open else "neutral"
+        ),
+        "body": body,
+        "range": candle_range,
+        "body_to_range": body / candle_range,
+        "upper_shadow": bar.high - body_high,
+        "lower_shadow": body_low - bar.low,
+        "body_high": body_high,
+        "body_low": body_low,
+    }
+
+
+def _pattern_trend(
+    bars: Sequence[IntradayBar],
+    *,
+    pattern_bars: int,
+    neutral_band_pct: float,
+) -> str:
+    history = list(bars[:-pattern_bars])
+    if len(history) < 2:
+        return "neutral"
+    lookback = min(5, len(history) - 1)
+    change = _pct_change(history[-1].close, history[-1 - lookback].close)
+    return _direction_label(change, neutral_band_pct)
+
+
+def _candlestick_analysis(
+    bars: Sequence[IntradayBar],
+    *,
+    interval_minutes: int,
+    trend_neutral_band_pct: float,
+) -> dict[str, Any]:
+    if len(bars) < 4:
+        raise GeneratorError("need at least four bars for candlestick analysis")
+
+    patterns: list[dict[str, Any]] = []
+
+    def add_pattern(
+        name: str,
+        bias: str,
+        contribution: float,
+        bars_used: int,
+        context: str,
+        reason: str,
+    ) -> None:
+        patterns.append(
+            {
+                "name": name,
+                "bias": bias,
+                "contribution": contribution,
+                "bars_used": bars_used,
+                "context": context,
+                "reason": reason,
+            }
+        )
+
+    current = bars[-1]
+    previous = bars[-2]
+    third = bars[-3]
+    current_metrics = _candle_metrics(current)
+    previous_metrics = _candle_metrics(previous)
+    third_metrics = _candle_metrics(third)
+    single_trend = _pattern_trend(
+        bars,
+        pattern_bars=1,
+        neutral_band_pct=trend_neutral_band_pct,
+    )
+    two_bar_trend = _pattern_trend(
+        bars,
+        pattern_bars=2,
+        neutral_band_pct=trend_neutral_band_pct,
+    )
+    three_bar_trend = _pattern_trend(
+        bars,
+        pattern_bars=3,
+        neutral_band_pct=trend_neutral_band_pct,
+    )
+
+    body_floor = current_metrics["range"] * 0.03
+    effective_body = max(current_metrics["body"], body_floor)
+    if current_metrics["body_to_range"] <= 0.10:
+        add_pattern(
+            "doji",
+            "neutral",
+            0.0,
+            1,
+            single_trend,
+            "The latest candle has a very small real body, indicating indecision",
+        )
+    elif (
+        current_metrics["body_to_range"] <= 0.25
+        and current_metrics["upper_shadow"] >= current_metrics["range"] * 0.20
+        and current_metrics["lower_shadow"] >= current_metrics["range"] * 0.20
+    ):
+        add_pattern(
+            "spinning_top",
+            "neutral",
+            0.0,
+            1,
+            single_trend,
+            "A small body with two-sided shadows indicates indecision",
+        )
+
+    long_lower_shadow = (
+        current_metrics["body_to_range"] <= 0.45
+        and current_metrics["lower_shadow"] >= effective_body * 2.0
+        and current_metrics["upper_shadow"] <= max(
+            effective_body * 0.75,
+            current_metrics["range"] * 0.12,
+        )
+    )
+    long_upper_shadow = (
+        current_metrics["body_to_range"] <= 0.45
+        and current_metrics["upper_shadow"] >= effective_body * 2.0
+        and current_metrics["lower_shadow"] <= max(
+            effective_body * 0.75,
+            current_metrics["range"] * 0.12,
+        )
+    )
+    if long_lower_shadow:
+        if single_trend == "bearish":
+            add_pattern(
+                "hammer",
+                "bullish",
+                0.60,
+                1,
+                single_trend,
+                "Long lower rejection after a decline is a bullish reversal candidate",
+            )
+        elif single_trend == "bullish":
+            add_pattern(
+                "hanging_man",
+                "bearish",
+                -0.50,
+                1,
+                single_trend,
+                "Long lower shadow after an advance warns of possible bearish reversal",
+            )
+        else:
+            add_pattern(
+                "long_lower_shadow",
+                "neutral",
+                0.0,
+                1,
+                single_trend,
+                "Lower-price rejection lacks a preceding trend for reversal confirmation",
+            )
+    elif long_upper_shadow:
+        if single_trend == "bearish":
+            add_pattern(
+                "inverted_hammer",
+                "bullish",
+                0.50,
+                1,
+                single_trend,
+                "Upper-price rejection after a decline is a bullish reversal candidate",
+            )
+        elif single_trend == "bullish":
+            add_pattern(
+                "shooting_star",
+                "bearish",
+                -0.60,
+                1,
+                single_trend,
+                "Long upper rejection after an advance is a bearish reversal candidate",
+            )
+        else:
+            add_pattern(
+                "long_upper_shadow",
+                "neutral",
+                0.0,
+                1,
+                single_trend,
+                "Higher-price rejection lacks a preceding trend for reversal confirmation",
+            )
+
+    bullish_engulfing = (
+        previous.close < previous.open
+        and current.close > current.open
+        and current_metrics["body_low"] <= previous_metrics["body_low"]
+        and current_metrics["body_high"] >= previous_metrics["body_high"]
+        and current_metrics["body"] > previous_metrics["body"]
+    )
+    bearish_engulfing = (
+        previous.close > previous.open
+        and current.close < current.open
+        and current_metrics["body_low"] <= previous_metrics["body_low"]
+        and current_metrics["body_high"] >= previous_metrics["body_high"]
+        and current_metrics["body"] > previous_metrics["body"]
+    )
+    if bullish_engulfing:
+        contribution = 0.75 if two_bar_trend == "bearish" else 0.45
+        add_pattern(
+            "bullish_engulfing",
+            "bullish",
+            contribution,
+            2,
+            two_bar_trend,
+            "The latest bullish body fully engulfs the preceding bearish body",
+        )
+    elif bearish_engulfing:
+        contribution = -0.75 if two_bar_trend == "bullish" else -0.45
+        add_pattern(
+            "bearish_engulfing",
+            "bearish",
+            contribution,
+            2,
+            two_bar_trend,
+            "The latest bearish body fully engulfs the preceding bullish body",
+        )
+    else:
+        bullish_harami = (
+            previous.close < previous.open
+            and current.close > current.open
+            and current_metrics["body_low"] >= previous_metrics["body_low"]
+            and current_metrics["body_high"] <= previous_metrics["body_high"]
+            and current_metrics["body"] < previous_metrics["body"]
+        )
+        bearish_harami = (
+            previous.close > previous.open
+            and current.close < current.open
+            and current_metrics["body_low"] >= previous_metrics["body_low"]
+            and current_metrics["body_high"] <= previous_metrics["body_high"]
+            and current_metrics["body"] < previous_metrics["body"]
+        )
+        if bullish_harami and two_bar_trend == "bearish":
+            add_pattern(
+                "bullish_harami",
+                "bullish",
+                0.40,
+                2,
+                two_bar_trend,
+                "A smaller bullish body inside a bearish body suggests reversal",
+            )
+        elif bearish_harami and two_bar_trend == "bullish":
+            add_pattern(
+                "bearish_harami",
+                "bearish",
+                -0.40,
+                2,
+                two_bar_trend,
+                "A smaller bearish body inside a bullish body suggests reversal",
+            )
+
+    first_large = third_metrics["body_to_range"] >= 0.50
+    middle_small = previous_metrics["body"] <= third_metrics["body"] * 0.55
+    third_large = current_metrics["body_to_range"] >= 0.45
+    first_midpoint = (third.open + third.close) / 2.0
+    if (
+        three_bar_trend == "bearish"
+        and third.close < third.open
+        and first_large
+        and middle_small
+        and current.close > current.open
+        and third_large
+        and current.close >= first_midpoint
+    ):
+        add_pattern(
+            "morning_star",
+            "bullish",
+            1.0,
+            3,
+            three_bar_trend,
+            "A three-candle recovery after a decline supports bullish reversal",
+        )
+    elif (
+        three_bar_trend == "bullish"
+        and third.close > third.open
+        and first_large
+        and middle_small
+        and current.close < current.open
+        and third_large
+        and current.close <= first_midpoint
+    ):
+        add_pattern(
+            "evening_star",
+            "bearish",
+            -1.0,
+            3,
+            three_bar_trend,
+            "A three-candle rejection after an advance supports bearish reversal",
+        )
+
+    last_three = list(bars[-3:])
+    last_three_metrics = [_candle_metrics(bar) for bar in last_three]
+    substantial_bodies = all(
+        metrics["body_to_range"] >= 0.50 for metrics in last_three_metrics
+    )
+    if (
+        substantial_bodies
+        and all(bar.close > bar.open for bar in last_three)
+        and last_three[0].close < last_three[1].close < last_three[2].close
+    ):
+        add_pattern(
+            "three_white_soldiers",
+            "bullish",
+            0.75,
+            3,
+            three_bar_trend,
+            "Three substantial rising bullish candles confirm buying pressure",
+        )
+    elif (
+        substantial_bodies
+        and all(bar.close < bar.open for bar in last_three)
+        and last_three[0].close > last_three[1].close > last_three[2].close
+    ):
+        add_pattern(
+            "three_black_crows",
+            "bearish",
+            -0.75,
+            3,
+            three_bar_trend,
+            "Three substantial falling bearish candles confirm selling pressure",
+        )
+
+    if current.high <= previous.high and current.low >= previous.low:
+        add_pattern(
+            "inside_bar",
+            "neutral",
+            0.0,
+            2,
+            two_bar_trend,
+            "The latest range is inside the prior candle and awaits a breakout",
+        )
+
+    directional_score = max(
+        -1.0,
+        min(1.0, sum(float(pattern["contribution"]) for pattern in patterns)),
+    )
+    bias = _direction_label(directional_score, 0.25)
+    return {
+        "bias": bias,
+        "score": round(directional_score, 2),
+        "maximum_absolute_score": 1.0,
+        "patterns": patterns,
+        "last_candle": {
+            "start_at": _window_iso(current.timestamp),
+            "end_at": _window_iso(
+                current.timestamp + timedelta(minutes=interval_minutes)
+            ),
+            "direction": current_metrics["direction"],
+            "body_to_range": _rounded(current_metrics["body_to_range"]),
+            "upper_shadow_to_range": _rounded(
+                current_metrics["upper_shadow"] / current_metrics["range"]
+            ),
+            "lower_shadow_to_range": _rounded(
+                current_metrics["lower_shadow"] / current_metrics["range"]
+            ),
+        },
+        "note": (
+            "Pattern direction is contextual evidence, not a standalone probability"
+        ),
+    }
+
+
 def _timeframe_analysis(
     label: str,
     bars: Sequence[IntradayBar],
@@ -689,6 +1052,11 @@ def _timeframe_analysis(
         interval_minutes=interval_minutes,
         neutral_slope_pct=settings["slope_threshold"],
     )
+    candlestick = _candlestick_analysis(
+        bars,
+        interval_minutes=interval_minutes,
+        trend_neutral_band_pct=settings["momentum_threshold"],
+    )
 
     prior_window = list(bars[-min(settings["trend_lookback"], len(bars)) : -1])
     if not prior_window:
@@ -703,6 +1071,24 @@ def _timeframe_analysis(
         if reference_price < support
         else "inside_range"
     )
+    level_tolerance_pct = {"1m": 0.05, "5m": 0.10, "15m": 0.20}[label]
+    candlestick["confirmation"] = {
+        "near_support": abs(_pct_change(bars[-1].low, support))
+        <= level_tolerance_pct,
+        "near_resistance": abs(_pct_change(bars[-1].high, resistance))
+        <= level_tolerance_pct,
+        "price_vs_session_vwap": (
+            "above" if price_vs_vwap > 0.05 else
+            "below" if price_vs_vwap < -0.05 else "near"
+        ),
+        "volume": (
+            "expanding"
+            if volume_ratio is not None and volume_ratio >= 1.20
+            else "contracting"
+            if volume_ratio is not None and volume_ratio <= 0.80
+            else "normal"
+        ),
+    }
 
     signals: list[dict[str, Any]] = []
     score = 0.0
@@ -777,6 +1163,19 @@ def _timeframe_analysis(
         vwap_contribution,
         "Last completed one-minute close relative to session VWAP",
     )
+    pattern_names = [pattern["name"] for pattern in candlestick["patterns"]]
+    pattern_score = float(candlestick["score"])
+    score += _add_signal(
+        signals,
+        "candlestick_pattern_score",
+        pattern_score,
+        pattern_score,
+        (
+            f"{label} contextual candlestick patterns: {', '.join(pattern_names)}"
+            if pattern_names
+            else f"No recognized {label} candlestick pattern"
+        ),
+    )
 
     bias = "bullish" if score >= 1.25 else "bearish" if score <= -1.25 else "neutral"
     volume_signal = (
@@ -791,8 +1190,9 @@ def _timeframe_analysis(
         "completed_bars": len(bars),
         "bias": bias,
         "score": round(score, 2),
-        "maximum_absolute_score": 3.75,
+        "maximum_absolute_score": 4.75,
         "trend_line": trend_line,
+        "candlestick_analysis": candlestick,
         "support_resistance": {
             "lookback_bars": len(prior_window),
             "support": _rounded(support),
@@ -930,6 +1330,19 @@ def build_intraday_report(
         / float(analysis["maximum_absolute_score"])
         for label, analysis in timeframe_analysis.items()
     )
+    candlestick_score = sum(
+        weights[label]
+        * float(analysis["candlestick_analysis"]["score"])
+        for label, analysis in timeframe_analysis.items()
+    )
+    candlestick_bias = _direction_label(candlestick_score, 0.20)
+    candlestick_patterns = {
+        label: [
+            pattern["name"]
+            for pattern in analysis["candlestick_analysis"]["patterns"]
+        ]
+        for label, analysis in timeframe_analysis.items()
+    }
     if (
         len(bullish_timeframes) >= 2
         and timeframe_analysis["15m"]["bias"] != "bearish"
@@ -969,7 +1382,8 @@ def build_intraday_report(
     conflict = bool(bullish_timeframes and bearish_timeframes)
     rationale = [
         f"{label} timeframe is {analysis['bias']} with a "
-        f"{analysis['trend_line']['direction']} regression trend"
+        f"{analysis['trend_line']['direction']} regression trend and "
+        f"{analysis['candlestick_analysis']['bias']} candlestick evidence"
         for label, analysis in timeframe_analysis.items()
     ]
     rationale.append(
@@ -1008,7 +1422,7 @@ def build_intraday_report(
             ),
         },
         "analysis": {
-            "method": "transparent-multitimeframe-rule-score-v1",
+            "method": "transparent-multitimeframe-rule-score-v2",
             "consensus_score": round(consensus_score, 2),
             "timeframe_weights": weights,
             "agreement": {
@@ -1018,12 +1432,26 @@ def build_intraday_report(
                 "agreement_ratio": round(agreement_ratio, 2),
                 "conflict": conflict,
             },
+            "candlestick_consensus": {
+                "bias": candlestick_bias,
+                "score": round(candlestick_score, 2),
+                "patterns_by_timeframe": candlestick_patterns,
+                "note": (
+                    "Candlestick evidence is incorporated into the timeframe scores "
+                    "and is not used as a standalone forecast"
+                ),
+            },
             "timeframes": timeframe_analysis,
             "market_signals": [
                 {
                     "name": "timeframe_consensus",
                     "value": round(consensus_score, 2),
                     "state": bias,
+                },
+                {
+                    "name": "candlestick_consensus",
+                    "value": round(candlestick_score, 2),
+                    "state": candlestick_bias,
                 },
                 {
                     "name": "price_vs_session_vwap_pct",

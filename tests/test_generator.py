@@ -137,6 +137,74 @@ class FakeResponse:
 
 
 class GeneratorTests(unittest.TestCase):
+    def test_candlestick_detects_bullish_engulfing_after_decline(self) -> None:
+        start = datetime(2026, 11, 9, 15, 0, tzinfo=timezone.utc)
+        values = [
+            (105.0, 105.2, 103.8, 104.0),
+            (104.0, 104.2, 102.8, 103.0),
+            (103.0, 103.2, 101.8, 102.0),
+            (102.0, 102.2, 100.8, 101.0),
+            (101.5, 101.7, 100.3, 100.5),
+            (100.2, 102.2, 100.0, 102.0),
+        ]
+        bars = [
+            generator.IntradayBar(
+                start + timedelta(minutes=index),
+                open_price,
+                high,
+                low,
+                close,
+                1000,
+                (open_price + close) / 2,
+            )
+            for index, (open_price, high, low, close) in enumerate(values)
+        ]
+
+        result = generator._candlestick_analysis(
+            bars,
+            interval_minutes=1,
+            trend_neutral_band_pct=0.04,
+        )
+
+        names = [pattern["name"] for pattern in result["patterns"]]
+        self.assertIn("bullish_engulfing", names)
+        self.assertEqual(result["bias"], "bullish")
+        self.assertGreater(result["score"], 0)
+
+    def test_candlestick_detects_shooting_star_after_advance(self) -> None:
+        start = datetime(2026, 11, 9, 15, 0, tzinfo=timezone.utc)
+        values = [
+            (100.0, 100.7, 99.9, 100.6),
+            (100.6, 101.3, 100.5, 101.2),
+            (101.2, 101.9, 101.1, 101.8),
+            (101.8, 102.5, 101.7, 102.4),
+            (102.4, 104.1, 102.3, 104.0),
+            (104.0, 105.0, 103.95, 104.15),
+        ]
+        bars = [
+            generator.IntradayBar(
+                start + timedelta(minutes=index),
+                open_price,
+                high,
+                low,
+                close,
+                1000,
+                (open_price + close) / 2,
+            )
+            for index, (open_price, high, low, close) in enumerate(values)
+        ]
+
+        result = generator._candlestick_analysis(
+            bars,
+            interval_minutes=1,
+            trend_neutral_band_pct=0.04,
+        )
+
+        names = [pattern["name"] for pattern in result["patterns"]]
+        self.assertIn("shooting_star", names)
+        self.assertEqual(result["bias"], "bearish")
+        self.assertLess(result["score"], 0)
+
     def test_intraday_fetches_one_minute_current_session_once(self) -> None:
         trading_date = date(2026, 11, 9)
         previous_day = date(2026, 11, 6)
@@ -278,8 +346,10 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(set(report["analysis"]["timeframes"]), {"1m", "5m", "15m"})
         for timeframe in report["analysis"]["timeframes"].values():
             self.assertIn("trend_line", timeframe)
+            self.assertIn("candlestick_analysis", timeframe)
             self.assertIn("support_resistance", timeframe)
             self.assertIn("signals", timeframe)
+        self.assertIn("candlestick_consensus", report["analysis"])
         validate_report(
             report,
             expected_session="intraday",

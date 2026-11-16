@@ -7,7 +7,7 @@ rule-based market report, validates it, writes `reports/YYYYMMDD.json`, updates
 Intraday runs also archive immutable five-minute signal snapshots below
 `reports/YYYYMMDD/`.
 
-Package version: **1.5.0**.
+Package version: **1.6.0**.
 
 The publisher is intentionally fail-closed. Validation finishes before it accesses
 Git. A bad report cannot replace `latest.json`.
@@ -59,9 +59,15 @@ ATR, realized volatility, and momentum. Intraday reports fetch completed one-min
 bars once, then aggregate those same observations locally into aligned 5-minute and
 15-minute bars. Each timeframe includes fast/slow EMA spread, RSI, momentum, session
 VWAP distance, relative volume, least-squares close trend line (slope and R-squared),
-support/resistance, breakout state, and its contributing market signals. The final
-direction requires agreement from at least two timeframes, cannot oppose the 15-minute
-timeframe, and must agree with price versus session VWAP; otherwise it is neutral.
+support/resistance, breakout state, contextual candlestick patterns, and its
+contributing market signals. Recognized patterns include doji, spinning top,
+hammer/hanging man, inverted hammer/shooting star, bullish/bearish engulfing and
+harami, morning/evening star, three white soldiers/black crows, and inside bars.
+Reversal names require the appropriate preceding trend. Pattern scores are capped and
+combined with—never substituted for—trend, VWAP, volume, and support/resistance. The
+final direction requires agreement from at least two timeframes, cannot oppose the
+15-minute timeframe, and must agree with price versus session VWAP; otherwise it is
+neutral.
 
 `forecast.signal_strength` is the normalized magnitude of a transparent rule score;
 it is deliberately **not** labeled confidence and is not a win probability. Premarket

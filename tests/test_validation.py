@@ -81,6 +81,16 @@ class ValidationTests(unittest.TestCase):
                 now=datetime(2026, 11, 9, 15, 51, tzinfo=timezone.utc),
             )
 
+    def test_intraday_requires_candlestick_analysis(self) -> None:
+        report = deepcopy(fixture("valid_intraday.json"))
+        del report["analysis"]["timeframes"]["5m"]["candlestick_analysis"]
+        with self.assertRaisesRegex(ValidationError, "candlestick_analysis"):
+            validate_report(
+                report,
+                expected_session="intraday",
+                now=datetime(2026, 11, 9, 15, 51, tzinfo=timezone.utc),
+            )
+
     def test_intraday_window_cannot_cross_close(self) -> None:
         report = deepcopy(fixture("valid_intraday.json"))
         report["generated_at"] = "2026-11-09T20:35:00Z"
