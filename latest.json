@@ -11,7 +11,7 @@
       "rsi14": 37.9386,
       "sma20": 757.7035,
       "sma5": 752.25,
-      "volume_vs_20d_average": 0.8255
+      "volume_vs_20d_average": 1.3719
     },
     "method": "transparent-stock-rule-score-v1",
     "score": -4.0,
@@ -44,7 +44,7 @@
         "contribution": -0.5,
         "name": "latest_session_return_pct",
         "reason": "Most recent completed regular session direction",
-        "value": -1.2819
+        "value": -1.2832
       }
     ]
   },
@@ -61,15 +61,23 @@
   "data_through": "2026-11-16",
   "disclaimer": "Uncalibrated rule-based signal strength for research; not a probability or investment advice.",
   "forecast": {
+    "bias": "bearish",
     "calibrated_probability": null,
-    "horizon": "none",
-    "is_directional_forecast": false,
+    "horizon": "first_regular_session_hour",
+    "is_directional_forecast": true,
     "rationale": [
-      "Postmarket reports are descriptive; use session_direction and trend_regime instead of interpreting this object as a forecast"
+      "spy_close_vs_sma20 contributed -1",
+      "spy_sma5_vs_sma20 contributed -1",
+      "spy_momentum_5d_pct contributed -1",
+      "spy_rsi14 contributed -0.5",
+      "latest_session_return_pct contributed -0.5"
     ],
-    "target": null
+    "signal_strength": 0.89,
+    "target": "window-end SPY price versus regular-session open",
+    "window_end": "2026-11-17T10:30:00-05:00",
+    "window_start": "2026-11-17T09:30:00-05:00"
   },
-  "generated_at": "2026-11-16T21:30:24.172326Z",
+  "generated_at": "2026-11-17T13:45:24.940950Z",
   "generator": {
     "name": "thetadata_report_generator",
     "version": "1.6.0"
@@ -78,38 +86,18 @@
     "as_of": "2026-11-16T15:55:00.000",
     "close": 740.04,
     "high": 749.82,
-    "intraday_return_pct": -1.2819,
+    "intraday_return_pct": -1.2832,
     "low": 738.07,
-    "open": 749.65,
+    "open": 749.66,
     "previous_close_to_close_pct": -1.884,
-    "volume": 31491469,
-    "vwap": 744.6435
+    "volume": 53872386,
+    "vwap": 744.8371
   },
   "market_timezone": "America/New_York",
-  "session": "postmarket",
-  "session_direction": {
-    "basis": "previous_close_to_close",
-    "bias": "bearish",
-    "open_to_close_pct": -1.2819,
-    "return_pct": -1.884
-  },
+  "session": "premarket",
   "source": "thetadata-local-v3",
   "source_venue": "nqb",
   "status": "live",
   "symbol": "SPY",
-  "trading_date": "2026-11-16",
-  "trend_regime": {
-    "bias": "bearish",
-    "lookback_sessions": 20,
-    "maximum_absolute_score": 4.5,
-    "rationale": [
-      "spy_close_vs_sma20 contributed -1",
-      "spy_sma5_vs_sma20 contributed -1",
-      "spy_momentum_5d_pct contributed -1",
-      "spy_rsi14 contributed -0.5",
-      "latest_session_return_pct contributed -0.5"
-    ],
-    "score": -4.0,
-    "signal_strength": 0.89
-  }
+  "trading_date": "2026-11-17"
 }
