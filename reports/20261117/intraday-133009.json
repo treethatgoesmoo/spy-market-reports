@@ -1,0 +1,442 @@
+{
+  "analysis": {
+    "agreement": {
+      "agreement_ratio": 0.67,
+      "bearish_timeframes": [],
+      "bullish_timeframes": [
+        "1m"
+      ],
+      "conflict": false,
+      "neutral_timeframes": [
+        "5m",
+        "15m"
+      ]
+    },
+    "candlestick_consensus": {
+      "bias": "bullish",
+      "note": "Candlestick evidence is incorporated into the timeframe scores and is not used as a standalone forecast",
+      "patterns_by_timeframe": {
+        "15m": [
+          "bullish_engulfing"
+        ],
+        "1m": [
+          "bullish_engulfing"
+        ],
+        "5m": [
+          "three_white_soldiers"
+        ]
+      },
+      "score": 0.55
+    },
+    "consensus_score": 0.22,
+    "indicators": {
+      "price_vs_session_vwap_pct": -0.1759
+    },
+    "market_signals": [
+      {
+        "name": "timeframe_consensus",
+        "state": "neutral",
+        "value": 0.22
+      },
+      {
+        "name": "candlestick_consensus",
+        "state": "bullish",
+        "value": 0.55
+      },
+      {
+        "name": "price_vs_session_vwap_pct",
+        "state": "below",
+        "value": -0.1759
+      },
+      {
+        "name": "one_minute_volume_ratio",
+        "state": "expanding",
+        "value": 1.5931
+      }
+    ],
+    "method": "transparent-multitimeframe-rule-score-v2",
+    "timeframe_weights": {
+      "15m": 0.4,
+      "1m": 0.25,
+      "5m": 0.35
+    },
+    "timeframes": {
+      "15m": {
+        "bias": "neutral",
+        "candlestick_analysis": {
+          "bias": "bullish",
+          "confirmation": {
+            "near_resistance": true,
+            "near_support": false,
+            "price_vs_session_vwap": "below",
+            "volume": "contracting"
+          },
+          "last_candle": {
+            "body_to_range": 0.908,
+            "direction": "bullish",
+            "end_at": "2026-11-17T13:30:00-05:00",
+            "lower_shadow_to_range": 0.056,
+            "start_at": "2026-11-17T13:15:00-05:00",
+            "upper_shadow_to_range": 0.036
+          },
+          "maximum_absolute_score": 1.0,
+          "note": "Pattern direction is contextual evidence, not a standalone probability",
+          "patterns": [
+            {
+              "bars_used": 2,
+              "bias": "bullish",
+              "context": "neutral",
+              "contribution": 0.45,
+              "name": "bullish_engulfing",
+              "reason": "The latest bullish body fully engulfs the preceding bearish body"
+            }
+          ],
+          "score": 0.45
+        },
+        "completed_bars": 16,
+        "indicators": {
+          "ema_fast": 732.4301,
+          "ema_fast_vs_slow_pct": 0.0208,
+          "ema_slow": 732.278,
+          "momentum_pct": 0.2474,
+          "price_vs_session_vwap_pct": -0.1759,
+          "recent_volume_ratio": 0.4826,
+          "rsi14": 35.2652,
+          "volume_signal": "contracting"
+        },
+        "interval_minutes": 15,
+        "maximum_absolute_score": 4.75,
+        "score": 0.2,
+        "signals": [
+          {
+            "contribution": 0.0,
+            "name": "ema_fast_vs_slow_pct",
+            "reason": "15m fast EMA relative to slow EMA",
+            "value": 0.0208
+          },
+          {
+            "contribution": 0.0,
+            "name": "trend_line_slope_pct_per_bar",
+            "reason": "15m least-squares close trend",
+            "value": 0.033
+          },
+          {
+            "contribution": 0.75,
+            "name": "momentum_pct",
+            "reason": "15m recent price momentum",
+            "value": 0.2474
+          },
+          {
+            "contribution": -0.5,
+            "name": "rsi14",
+            "reason": "15m RSI trend confirmation",
+            "value": 35.2652
+          },
+          {
+            "contribution": -0.5,
+            "name": "price_vs_session_vwap_pct",
+            "reason": "Last completed one-minute close relative to session VWAP",
+            "value": -0.1759
+          },
+          {
+            "contribution": 0.45,
+            "name": "candlestick_pattern_score",
+            "reason": "15m contextual candlestick patterns: bullish_engulfing",
+            "value": 0.45
+          }
+        ],
+        "support_resistance": {
+          "breakout_state": "inside_range",
+          "lookback_bars": 7,
+          "price_vs_resistance_pct": -0.16,
+          "price_vs_support_pct": 0.7024,
+          "resistance": 734.505,
+          "support": 728.215
+        },
+        "trend_line": {
+          "direction": "neutral",
+          "end_at": "2026-11-17T13:30:00-05:00",
+          "end_price": 732.7075,
+          "lookback_bars": 8,
+          "lookback_minutes": 120,
+          "method": "least_squares_close",
+          "r_squared": 0.2712,
+          "slope_pct_per_bar": 0.032964,
+          "slope_points_per_bar": 0.24125,
+          "start_at": "2026-11-17T11:30:00-05:00",
+          "start_price": 731.0187
+        }
+      },
+      "1m": {
+        "bias": "bullish",
+        "candlestick_analysis": {
+          "bias": "bullish",
+          "confirmation": {
+            "near_resistance": true,
+            "near_support": false,
+            "price_vs_session_vwap": "below",
+            "volume": "expanding"
+          },
+          "last_candle": {
+            "body_to_range": 0.6129,
+            "direction": "bullish",
+            "end_at": "2026-11-17T13:30:00-05:00",
+            "lower_shadow_to_range": 0.0968,
+            "start_at": "2026-11-17T13:29:00-05:00",
+            "upper_shadow_to_range": 0.2903
+          },
+          "maximum_absolute_score": 1.0,
+          "note": "Pattern direction is contextual evidence, not a standalone probability",
+          "patterns": [
+            {
+              "bars_used": 2,
+              "bias": "bullish",
+              "context": "bullish",
+              "contribution": 0.45,
+              "name": "bullish_engulfing",
+              "reason": "The latest bullish body fully engulfs the preceding bearish body"
+            }
+          ],
+          "score": 0.45
+        },
+        "completed_bars": 240,
+        "indicators": {
+          "ema_fast": 732.6228,
+          "ema_fast_vs_slow_pct": 0.0645,
+          "ema_slow": 732.1507,
+          "momentum_pct": 0.1406,
+          "price_vs_session_vwap_pct": -0.1759,
+          "recent_volume_ratio": 1.5931,
+          "rsi14": 83.0872,
+          "volume_signal": "expanding"
+        },
+        "interval_minutes": 1,
+        "maximum_absolute_score": 4.75,
+        "score": 3.2,
+        "signals": [
+          {
+            "contribution": 1.0,
+            "name": "ema_fast_vs_slow_pct",
+            "reason": "1m fast EMA relative to slow EMA",
+            "value": 0.0645
+          },
+          {
+            "contribution": 1.0,
+            "name": "trend_line_slope_pct_per_bar",
+            "reason": "1m least-squares close trend",
+            "value": 0.0137
+          },
+          {
+            "contribution": 0.75,
+            "name": "momentum_pct",
+            "reason": "1m recent price momentum",
+            "value": 0.1406
+          },
+          {
+            "contribution": 0.5,
+            "name": "rsi14",
+            "reason": "1m RSI trend confirmation",
+            "value": 83.0872
+          },
+          {
+            "contribution": -0.5,
+            "name": "price_vs_session_vwap_pct",
+            "reason": "Last completed one-minute close relative to session VWAP",
+            "value": -0.1759
+          },
+          {
+            "contribution": 0.45,
+            "name": "candlestick_pattern_score",
+            "reason": "1m contextual candlestick patterns: bullish_engulfing",
+            "value": 0.45
+          }
+        ],
+        "support_resistance": {
+          "breakout_state": "inside_range",
+          "lookback_bars": 19,
+          "price_vs_resistance_pct": -0.0054,
+          "price_vs_support_pct": 0.3297,
+          "resistance": 733.3696,
+          "support": 730.92
+        },
+        "trend_line": {
+          "direction": "bullish",
+          "end_at": "2026-11-17T13:30:00-05:00",
+          "end_price": 732.827,
+          "lookback_bars": 20,
+          "lookback_minutes": 20,
+          "method": "least_squares_close",
+          "r_squared": 0.6238,
+          "slope_pct_per_bar": 0.013742,
+          "slope_points_per_bar": 0.100572,
+          "start_at": "2026-11-17T13:10:00-05:00",
+          "start_price": 730.9161
+        }
+      },
+      "5m": {
+        "bias": "neutral",
+        "candlestick_analysis": {
+          "bias": "bullish",
+          "confirmation": {
+            "near_resistance": true,
+            "near_support": false,
+            "price_vs_session_vwap": "below",
+            "volume": "expanding"
+          },
+          "last_candle": {
+            "body_to_range": 0.905,
+            "direction": "bullish",
+            "end_at": "2026-11-17T13:30:00-05:00",
+            "lower_shadow_to_range": 0.0136,
+            "start_at": "2026-11-17T13:25:00-05:00",
+            "upper_shadow_to_range": 0.0814
+          },
+          "maximum_absolute_score": 1.0,
+          "note": "Pattern direction is contextual evidence, not a standalone probability",
+          "patterns": [
+            {
+              "bars_used": 3,
+              "bias": "bullish",
+              "context": "neutral",
+              "contribution": 0.75,
+              "name": "three_white_soldiers",
+              "reason": "Three substantial rising bullish candles confirm buying pressure"
+            }
+          ],
+          "score": 0.75
+        },
+        "completed_bars": 48,
+        "indicators": {
+          "ema_fast": 732.23,
+          "ema_fast_vs_slow_pct": 0.0268,
+          "ema_slow": 732.0337,
+          "momentum_pct": 0.3105,
+          "price_vs_session_vwap_pct": -0.1759,
+          "recent_volume_ratio": 1.2432,
+          "rsi14": 44.1754,
+          "volume_signal": "expanding"
+        },
+        "interval_minutes": 5,
+        "maximum_absolute_score": 4.75,
+        "score": 0.5,
+        "signals": [
+          {
+            "contribution": 0.0,
+            "name": "ema_fast_vs_slow_pct",
+            "reason": "5m fast EMA relative to slow EMA",
+            "value": 0.0268
+          },
+          {
+            "contribution": 0.0,
+            "name": "trend_line_slope_pct_per_bar",
+            "reason": "5m least-squares close trend",
+            "value": 0.0022
+          },
+          {
+            "contribution": 0.75,
+            "name": "momentum_pct",
+            "reason": "5m recent price momentum",
+            "value": 0.3105
+          },
+          {
+            "contribution": -0.5,
+            "name": "rsi14",
+            "reason": "5m RSI trend confirmation",
+            "value": 44.1754
+          },
+          {
+            "contribution": -0.5,
+            "name": "price_vs_session_vwap_pct",
+            "reason": "Last completed one-minute close relative to session VWAP",
+            "value": -0.1759
+          },
+          {
+            "contribution": 0.75,
+            "name": "candlestick_pattern_score",
+            "reason": "5m contextual candlestick patterns: three_white_soldiers",
+            "value": 0.75
+          }
+        ],
+        "support_resistance": {
+          "breakout_state": "inside_range",
+          "lookback_bars": 11,
+          "price_vs_resistance_pct": -0.0104,
+          "price_vs_support_pct": 0.3434,
+          "resistance": 733.4063,
+          "support": 730.82
+        },
+        "trend_line": {
+          "direction": "neutral",
+          "end_at": "2026-11-17T13:30:00-05:00",
+          "end_price": 732.0295,
+          "lookback_bars": 12,
+          "lookback_minutes": 60,
+          "method": "least_squares_close",
+          "r_squared": 0.0088,
+          "slope_pct_per_bar": 0.002234,
+          "slope_points_per_bar": 0.016349,
+          "start_at": "2026-11-17T12:30:00-05:00",
+          "start_price": 731.8497
+        }
+      }
+    }
+  },
+  "data_quality": {
+    "completed_bars": {
+      "15m": 16,
+      "1m": 240,
+      "5m": 48
+    },
+    "completeness": 1.0,
+    "coverage": "not consolidated UTP/CTA",
+    "feed": "Nasdaq Basic",
+    "inputs": [
+      "SPY stock OHLC (Nasdaq Basic)"
+    ],
+    "source_interval_minutes": 1
+  },
+  "data_through": "2026-11-17",
+  "disclaimer": "Uncalibrated rule-based signal strength for research; not a probability or investment advice.",
+  "forecast": {
+    "bias": "neutral",
+    "calibrated_probability": null,
+    "duration_minutes": 15,
+    "horizon": "next_15_minutes",
+    "is_directional_forecast": true,
+    "rationale": [
+      "1m timeframe is bullish with a bullish regression trend and bullish candlestick evidence",
+      "5m timeframe is neutral with a neutral regression trend and bullish candlestick evidence",
+      "15m timeframe is neutral with a neutral regression trend and bullish candlestick evidence",
+      "Price is below session VWAP by 0.18%"
+    ],
+    "reference_price": 733.33,
+    "signal_strength": 0.2,
+    "target": "15-minute window-end SPY price versus reference_price",
+    "window_end": "2026-11-17T13:45:00-05:00",
+    "window_start": "2026-11-17T13:30:00-05:00"
+  },
+  "generated_at": "2026-11-17T18:30:09.314281Z",
+  "generator": {
+    "name": "thetadata_report_generator",
+    "version": "1.6.0"
+  },
+  "market": {
+    "as_of": "2026-11-17T13:30:00-05:00",
+    "last_completed_bar_start": "2026-11-17T13:29:00-05:00",
+    "open_to_current_pct": -0.6853,
+    "previous_close_to_current_pct": -0.9067,
+    "reference_price": 733.33,
+    "session_high": 739.76,
+    "session_low": 727.0,
+    "session_open": 738.39,
+    "session_volume_nasdaq_basic": 18868750,
+    "session_vwap": 734.6224
+  },
+  "market_timezone": "America/New_York",
+  "session": "intraday",
+  "source": "thetadata-local-v3",
+  "source_venue": "nqb",
+  "status": "live",
+  "symbol": "SPY",
+  "trading_date": "2026-11-17"
+}
