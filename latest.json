@@ -11,7 +11,7 @@
       "rsi14": 34.384,
       "sma20": 755.872,
       "sma5": 748.734,
-      "volume_vs_20d_average": 0.8406
+      "volume_vs_20d_average": 1.464
     },
     "method": "transparent-stock-rule-score-v1",
     "score": -4.0,
@@ -61,15 +61,23 @@
   "data_through": "2026-11-17",
   "disclaimer": "Uncalibrated rule-based signal strength for research; not a probability or investment advice.",
   "forecast": {
+    "bias": "bearish",
     "calibrated_probability": null,
-    "horizon": "none",
-    "is_directional_forecast": false,
+    "horizon": "first_regular_session_hour",
+    "is_directional_forecast": true,
     "rationale": [
-      "Postmarket reports are descriptive; use session_direction and trend_regime instead of interpreting this object as a forecast"
+      "spy_close_vs_sma20 contributed -1",
+      "spy_sma5_vs_sma20 contributed -1",
+      "spy_momentum_5d_pct contributed -1",
+      "spy_rsi14 contributed -0.5",
+      "latest_session_return_pct contributed -0.5"
     ],
-    "target": null
+    "signal_strength": 0.89,
+    "target": "window-end SPY price versus regular-session open",
+    "window_end": "2026-11-18T10:30:00-05:00",
+    "window_start": "2026-11-18T09:30:00-05:00"
   },
-  "generated_at": "2026-11-17T21:30:29.492881Z",
+  "generated_at": "2026-11-18T13:45:30.608240Z",
   "generator": {
     "name": "thetadata_report_generator",
     "version": "1.6.0"
@@ -82,34 +90,14 @@
     "low": 727.0,
     "open": 738.39,
     "previous_close_to_close_pct": -1.0351,
-    "volume": 33178830,
-    "vwap": 733.4906
+    "volume": 59726493,
+    "vwap": 733.7726
   },
   "market_timezone": "America/New_York",
-  "session": "postmarket",
-  "session_direction": {
-    "basis": "previous_close_to_close",
-    "bias": "bearish",
-    "open_to_close_pct": -0.8139,
-    "return_pct": -1.0351
-  },
+  "session": "premarket",
   "source": "thetadata-local-v3",
   "source_venue": "nqb",
   "status": "live",
   "symbol": "SPY",
-  "trading_date": "2026-11-17",
-  "trend_regime": {
-    "bias": "bearish",
-    "lookback_sessions": 20,
-    "maximum_absolute_score": 4.5,
-    "rationale": [
-      "spy_close_vs_sma20 contributed -1",
-      "spy_sma5_vs_sma20 contributed -1",
-      "spy_momentum_5d_pct contributed -1",
-      "spy_rsi14 contributed -0.5",
-      "latest_session_return_pct contributed -0.5"
-    ],
-    "score": -4.0,
-    "signal_strength": 0.89
-  }
+  "trading_date": "2026-11-18"
 }
